@@ -1,580 +1,590 @@
--- AppleGlassUI Enhanced
--- 修复：自适应、悬浮球、窗口拖动、下拉菜单
+--[[
+    Crystal UI Library v1.0
+    - 自适应屏幕 (PC/移动端)
+    - 可拖动悬浮球 & 主窗口
+    - 左侧导航栏 + 模块化页面
+    - 内置控件: 按钮、开关、滑块、下拉菜单、标签
+    - 远程调用友好，直接返回创建函数
+    使用方法: local CrystalUI = loadstring(game:HttpGet("https://your-host.com/crystal_ui.lua"))()
+              local gui = CrystalUI:CreateWindow("你的标题")
+]]
 
-local AppleGlassUI = {}
+local Library = {}
+Library.__index = Library
+
+-- 服务
 local TweenService = game:GetService("TweenService")
 local UserInputService = game:GetService("UserInputService")
 local RunService = game:GetService("RunService")
 local Players = game:GetService("Players")
+local CoreGui = game:GetService("CoreGui")
 
-local LocalPlayer = Players.LocalPlayer
-local Mouse = LocalPlayer:GetMouse()
+-- 玩家与屏幕
+local Player = Players.LocalPlayer
+local Mouse = Player:GetMouse()
+local ScreenSize = workspace.CurrentCamera.ViewportSize
 
--- 样式配置
-local Style = {
-    BackgroundColor = Color3.fromRGB(255, 255, 255),
-    GlassOpacity = 0.65,
-    AccentColor = Color3.fromRGB(0, 122, 255),
-    TextColor = Color3.fromRGB(40, 40, 40),
-    SubTextColor = Color3.fromRGB(100, 100, 100),
-    CornerRadius = UDim.new(0, 12),
-    ShadowTransparency = 0.75,
-    Font = Enum.Font.GothamSemibold,
-    AnimationSpeed = 0.2,
-}
+-- 工具函数：使对象可拖动
+local function MakeDraggable(guiObject, dragHandle)
+    dragHandle = dragHandle or guiObject
+    local dragging = false
+    local dragStart = nil
+    local startPos = nil
 
--- 工具函数：计算屏幕比例尺寸
-local function ScaleDimension(scaleX, scaleY, offsetX, offsetY)
-    return UDim2.new(scaleX or 0, offsetX or 0, scaleY or 0, offsetY or 0)
+    dragHandle.InputBegan:Connect(function(input)
+        if input.UserInputType == Enum.UserInputType.MouseButton1 or input.UserInputType == Enum.UserInputType.Touch then
+            dragging = true
+            dragStart = input.Position
+            startPos = guiObject.Position
+            input.Changed:Connect(function()
+                if input.UserInputState == Enum.UserInputState.End then
+                    dragging = false
+                end
+            end)
+        end
+    end)
+
+    dragHandle.InputChanged:Connect(function(input)
+        if dragging and (input.UserInputType == Enum.UserInputType.MouseMovement or input.UserInputType == Enum.UserInputType.Touch) then
+            local delta = input.Position - dragStart
+            local newPos = UDim2.new(
+                startPos.X.Scale,
+                startPos.X.Offset + delta.X,
+                startPos.Y.Scale,
+                startPos.Y.Offset + delta.Y
+            )
+            -- 边界限制 (保留部分可见)
+            local absX = newPos.X.Offset + newPos.X.Scale * ScreenSize.X
+            local absY = newPos.Y.Offset + newPos.Y.Scale * ScreenSize.Y
+            local width = guiObject.AbsoluteSize.X
+            local height = guiObject.AbsoluteSize.Y
+
+            absX = math.clamp(absX, -width + 40, ScreenSize.X - 40)
+            absY = math.clamp(absY, 0, ScreenSize.Y - 40)
+
+            guiObject.Position = UDim2.new(0, absX, 0, absY)
+        end
+    end)
 end
 
--- 创建毛玻璃 Frame (自适应圆角、阴影)
-function AppleGlassUI:CreateGlassFrame(parent, size, position, anchorPoint)
-    local frame = Instance.new("Frame")
-    frame.Size = size or ScaleDimension(0.3, 0.4, 0, 0)
-    frame.Position = position or ScaleDimension(0.5, 0.5, 0, 0)
-    frame.AnchorPoint = anchorPoint or Vector2.new(0.5, 0.5)
-    frame.BackgroundColor3 = Style.BackgroundColor
-    frame.BackgroundTransparency = 1 - Style.GlassOpacity
-    frame.BorderSizePixel = 0
-    frame.ClipsDescendants = true
-    frame.Parent = parent
+-- 主窗口创建函数
+function Library:CreateWindow(title)
+    local self = setmetatable({}, Library)
+    self.Title = title or "Crystal UI"
+    self.Tabs = {}
+    self.CurrentTab = nil
+    self.Active = true
+
+    -- 创建悬浮球
+    self.FloatingBall = Instance.new("ImageButton")
+    self.FloatingBall.Name = "Crystal_FloatingBall"
+    self.FloatingBall.Image = "rbxassetid://8992230677" -- 可替换为自定义图片
+    self.FloatingBall.BackgroundColor3 = Color3.fromRGB(30, 30, 40)
+    self.FloatingBall.BackgroundTransparency = 0.2
+    self.FloatingBall.BorderSizePixel = 0
+    self.FloatingBall.Size = UDim2.new(0, 55, 0, 55)
+    self.FloatingBall.Position = UDim2.new(0, ScreenSize.X - 70, 0, ScreenSize.Y - 150)
+    self.FloatingBall.AnchorPoint = Vector2.new(0.5, 0.5)
+    self.FloatingBall.ZIndex = 10
 
     local corner = Instance.new("UICorner")
-    corner.CornerRadius = Style.CornerRadius
-    corner.Parent = frame
+    corner.CornerRadius = UDim.new(1, 0)
+    corner.Parent = self.FloatingBall
 
-    -- 模拟磨砂渐变
-    local gradient = Instance.new("UIGradient")
-    gradient.Transparency = NumberSequence.new({
-        NumberSequenceKeypoint.new(0, 0.05),
-        NumberSequenceKeypoint.new(1, 0.15),
-    })
-    gradient.Rotation = 45
-    gradient.Parent = frame
+    local stroke = Instance.new("UIStroke")
+    stroke.Color = Color3.fromRGB(100, 100, 255)
+    stroke.Thickness = 2
+    stroke.Parent = self.FloatingBall
 
-    -- 阴影层
-    local shadow = Instance.new("Frame")
-    shadow.Size = UDim2.new(1, 0, 1, 0)
-    shadow.Position = UDim2.new(0, 3, 0, 5)
-    shadow.BackgroundColor3 = Color3.fromRGB(0, 0, 0)
-    shadow.BackgroundTransparency = Style.ShadowTransparency
-    shadow.BorderSizePixel = 0
-    shadow.ZIndex = frame.ZIndex - 1
-    shadow.Parent = frame
+    self.FloatingBall.Parent = CoreGui
 
-    local shadowCorner = Instance.new("UICorner")
-    shadowCorner.CornerRadius = Style.CornerRadius
-    shadowCorner.Parent = shadow
+    MakeDraggable(self.FloatingBall)
 
-    return frame
+    -- 创建主窗口 (初始隐藏)
+    self.MainFrame = Instance.new("Frame")
+    self.MainFrame.Name = "Crystal_Main"
+    self.MainFrame.Size = UDim2.new(0, 580, 0, 380)
+    self.MainFrame.Position = UDim2.new(0.5, -290, 0.5, -190)
+    self.MainFrame.BackgroundColor3 = Color3.fromRGB(25, 25, 35)
+    self.MainFrame.BackgroundTransparency = 0.1
+    self.MainFrame.BorderSizePixel = 0
+    self.MainFrame.Visible = false
+    self.MainFrame.ZIndex = 5
+    self.MainFrame.Parent = CoreGui
+
+    local mainCorner = Instance.new("UICorner")
+    mainCorner.CornerRadius = UDim.new(0, 12)
+    mainCorner.Parent = self.MainFrame
+
+    local mainStroke = Instance.new("UIStroke")
+    mainStroke.Color = Color3.fromRGB(80, 80, 120)
+    mainStroke.Thickness = 1.5
+    mainStroke.Parent = self.MainFrame
+
+    -- 标题栏 (拖动把手)
+    self.TitleBar = Instance.new("Frame")
+    self.TitleBar.Name = "TitleBar"
+    self.TitleBar.Size = UDim2.new(1, 0, 0, 35)
+    self.TitleBar.BackgroundColor3 = Color3.fromRGB(35, 35, 45)
+    self.TitleBar.BorderSizePixel = 0
+    self.TitleBar.Parent = self.MainFrame
+
+    local titleCorner = Instance.new("UICorner")
+    titleCorner.CornerRadius = UDim.new(0, 12)
+    titleCorner.Parent = self.TitleBar
+
+    local titleLabel = Instance.new("TextLabel")
+    titleLabel.Size = UDim2.new(1, -40, 1, 0)
+    titleLabel.Position = UDim2.new(0, 15, 0, 0)
+    titleLabel.BackgroundTransparency = 1
+    titleLabel.Text = self.Title
+    titleLabel.TextColor3 = Color3.fromRGB(255, 255, 255)
+    titleLabel.TextXAlignment = Enum.TextXAlignment.Left
+    titleLabel.Font = Enum.Font.GothamBold
+    titleLabel.TextSize = 18
+    titleLabel.Parent = self.TitleBar
+
+    local closeBtn = Instance.new("TextButton")
+    closeBtn.Size = UDim2.new(0, 30, 0, 30)
+    closeBtn.Position = UDim2.new(1, -35, 0.5, -15)
+    closeBtn.BackgroundColor3 = Color3.fromRGB(255, 80, 80)
+    closeBtn.BackgroundTransparency = 0.8
+    closeBtn.BorderSizePixel = 0
+    closeBtn.Text = "✕"
+    closeBtn.TextColor3 = Color3.fromRGB(255, 255, 255)
+    closeBtn.Font = Enum.Font.GothamBold
+    closeBtn.TextSize = 18
+    closeBtn.Parent = self.TitleBar
+
+    local closeCorner = Instance.new("UICorner")
+    closeCorner.CornerRadius = UDim.new(0, 6)
+    closeCorner.Parent = closeBtn
+
+    closeBtn.MouseButton1Click:Connect(function()
+        self.MainFrame.Visible = false
+        self.Active = false
+    end)
+
+    -- 主窗口拖动
+    MakeDraggable(self.MainFrame, self.TitleBar)
+
+    -- 左侧导航栏
+    self.NavBar = Instance.new("Frame")
+    self.NavBar.Size = UDim2.new(0, 140, 1, -35)
+    self.NavBar.Position = UDim2.new(0, 0, 0, 35)
+    self.NavBar.BackgroundColor3 = Color3.fromRGB(30, 30, 40)
+    self.NavBar.BackgroundTransparency = 0.3
+    self.NavBar.BorderSizePixel = 0
+    self.NavBar.Parent = self.MainFrame
+
+    local navCorner = Instance.new("UICorner")
+    navCorner.CornerRadius = UDim.new(0, 12)
+    navCorner.Parent = self.NavBar
+
+    -- 内容容器
+    self.ContentContainer = Instance.new("Frame")
+    self.ContentContainer.Size = UDim2.new(1, -150, 1, -35)
+    self.ContentContainer.Position = UDim2.new(0, 145, 0, 35)
+    self.ContentContainer.BackgroundTransparency = 1
+    self.ContentContainer.BorderSizePixel = 0
+    self.ContentContainer.Parent = self.MainFrame
+
+    -- 页面容器
+    self.Pages = Instance.new("Folder")
+    self.Pages.Name = "Pages"
+    self.Pages.Parent = self.ContentContainer
+
+    -- 悬浮球点击切换显示/隐藏
+    self.FloatingBall.MouseButton1Click:Connect(function()
+        self.MainFrame.Visible = not self.MainFrame.Visible
+        self.Active = self.MainFrame.Visible
+        if self.MainFrame.Visible then
+            self.MainFrame.ZIndex = 10
+        end
+    end)
+
+    -- 自适应屏幕 (监听分辨率变化)
+    local function UpdateScreenSize()
+        ScreenSize = workspace.CurrentCamera.ViewportSize
+        -- 调整悬浮球位置防止出屏
+        local ballPos = self.FloatingBall.Position
+        local absX = ballPos.X.Offset + ballPos.X.Scale * ScreenSize.X
+        local absY = ballPos.Y.Offset + ballPos.Y.Scale * ScreenSize.Y
+        absX = math.clamp(absX, 30, ScreenSize.X - 30)
+        absY = math.clamp(absY, 30, ScreenSize.Y - 30)
+        self.FloatingBall.Position = UDim2.new(0, absX, 0, absY)
+
+        -- 调整主窗口位置 (居中且不超出)
+        local frameSize = self.MainFrame.AbsoluteSize
+        local newX = (ScreenSize.X - frameSize.X) / 2
+        local newY = (ScreenSize.Y - frameSize.Y) / 2
+        self.MainFrame.Position = UDim2.new(0, newX, 0, newY)
+    end
+
+    workspace.CurrentCamera:GetPropertyChangedSignal("ViewportSize"):Connect(UpdateScreenSize)
+    UpdateScreenSize()
+
+    -- 移动端触控优化
+    if UserInputService.TouchEnabled then
+        self.FloatingBall.Size = UDim2.new(0, 65, 0, 65)
+    end
+
+    return self
 end
 
--- 创建标题 (自适应字号)
-function AppleGlassUI:CreateTitle(parent, text, fontSize)
-    local label = Instance.new("TextLabel")
-    label.Size = UDim2.new(1, -30, 0, fontSize or 24)
-    label.Position = UDim2.new(0, 15, 0, 10)
-    label.BackgroundTransparency = 1
-    label.Text = text or "Title"
-    label.TextColor3 = Style.TextColor
-    label.Font = Style.Font
-    label.TextScaled = true
-    label.TextWrapped = false
-    label.TextXAlignment = Enum.TextXAlignment.Left
-    label.Parent = parent
-    return label
+-- 添加导航标签
+function Library:AddTab(tabName)
+    local tabButton = Instance.new("TextButton")
+    tabButton.Name = tabName
+    tabButton.Size = UDim2.new(1, -16, 0, 35)
+    tabButton.Position = UDim2.new(0, 8, 0, 8 + (#self.Tabs * 45))
+    tabButton.BackgroundColor3 = Color3.fromRGB(45, 45, 55)
+    tabButton.BackgroundTransparency = 0.5
+    tabButton.BorderSizePixel = 0
+    tabButton.Text = tabName
+    tabButton.TextColor3 = Color3.fromRGB(220, 220, 255)
+    tabButton.Font = Enum.Font.GothamSemibold
+    tabButton.TextSize = 16
+    tabButton.Parent = self.NavBar
+
+    local tabCorner = Instance.new("UICorner")
+    tabCorner.CornerRadius = UDim.new(0, 8)
+    tabCorner.Parent = tabButton
+
+    -- 创建对应页面
+    local page = Instance.new("ScrollingFrame")
+    page.Name = tabName .. "_Page"
+    page.Size = UDim2.new(1, -10, 1, -10)
+    page.Position = UDim2.new(0, 5, 0, 5)
+    page.BackgroundTransparency = 1
+    page.BorderSizePixel = 0
+    page.ScrollBarThickness = 4
+    page.ScrollBarImageColor3 = Color3.fromRGB(100, 100, 200)
+    page.CanvasSize = UDim2.new(0, 0, 0, 0)
+    page.AutomaticCanvasSize = Enum.AutomaticSize.Y
+    page.ScrollingEnabled = true
+    page.Parent = self.Pages
+
+    local pageLayout = Instance.new("UIListLayout")
+    pageLayout.Padding = UDim.new(0, 8)
+    pageLayout.HorizontalAlignment = Enum.HorizontalAlignment.Center
+    pageLayout.SortOrder = Enum.SortOrder.LayoutOrder
+    pageLayout.Parent = page
+
+    local tabData = {
+        Button = tabButton,
+        Page = page,
+        Layout = pageLayout,
+        Elements = {}
+    }
+
+    tabButton.MouseButton1Click:Connect(function()
+        for _, tab in ipairs(self.Tabs) do
+            tab.Page.Visible = false
+            tab.Button.BackgroundColor3 = Color3.fromRGB(45, 45, 55)
+        end
+        tabData.Page.Visible = true
+        tabButton.BackgroundColor3 = Color3.fromRGB(80, 80, 140)
+        self.CurrentTab = tabData
+    end)
+
+    table.insert(self.Tabs, tabData)
+
+    -- 默认激活第一个标签
+    if #self.Tabs == 1 then
+        tabData.Page.Visible = true
+        tabButton.BackgroundColor3 = Color3.fromRGB(80, 80, 140)
+        self.CurrentTab = tabData
+    else
+        tabData.Page.Visible = false
+    end
+
+    return {
+        AddButton = function(buttonText, callback)
+            self:AddButton(tabData, buttonText, callback)
+        end,
+        AddToggle = function(toggleText, default, callback)
+            self:AddToggle(tabData, toggleText, default, callback)
+        end,
+        AddSlider = function(sliderText, min, max, default, callback)
+            self:AddSlider(tabData, sliderText, min, max, default, callback)
+        end,
+        AddDropdown = function(dropdownText, options, callback)
+            self:AddDropdown(tabData, dropdownText, options, callback)
+        end,
+        AddLabel = function(labelText)
+            self:AddLabel(tabData, labelText)
+        end
+    }
 end
 
--- 创建描述文本
-function AppleGlassUI:CreateDescription(parent, text, fontSize)
-    local label = Instance.new("TextLabel")
-    label.Size = UDim2.new(1, -30, 0, fontSize or 16)
-    label.Position = UDim2.new(0, 15, 0, 40)
-    label.BackgroundTransparency = 1
-    label.Text = text or "Description"
-    label.TextColor3 = Style.SubTextColor
-    label.Font = Enum.Font.Gotham
-    label.TextScaled = true
-    label.TextXAlignment = Enum.TextXAlignment.Left
-    label.Parent = parent
-    return label
-end
-
--- 分隔线
-function AppleGlassUI:CreateDivider(parent, position)
-    local line = Instance.new("Frame")
-    line.Size = UDim2.new(1, -30, 0, 1)
-    line.Position = position or UDim2.new(0, 15, 0, 70)
-    line.BackgroundColor3 = Color3.fromRGB(200, 200, 200)
-    line.BackgroundTransparency = 0.5
-    line.BorderSizePixel = 0
-    line.Parent = parent
-    return line
-end
-
--- 按钮 (带悬停点击动画)
-function AppleGlassUI:CreateButton(parent, text, callback, position, size)
+-- 内部方法：创建UI元素
+function Library:AddButton(tab, text, callback)
     local button = Instance.new("TextButton")
-    button.Size = size or UDim2.new(1, -30, 0, 40)
-    button.Position = position or UDim2.new(0, 15, 0, 80)
-    button.BackgroundColor3 = Style.AccentColor
-    button.BackgroundTransparency = 0.15
+    button.Size = UDim2.new(1, -20, 0, 40)
+    button.Position = UDim2.new(0, 10, 0, 0)
+    button.BackgroundColor3 = Color3.fromRGB(60, 60, 80)
     button.BorderSizePixel = 0
-    button.Text = text or "Button"
-    button.TextColor3 = Style.AccentColor
-    button.Font = Style.Font
-    button.TextSize = 18
-    button.TextScaled = true
-    button.AutoButtonColor = false
-    button.Parent = parent
+    button.Text = text
+    button.TextColor3 = Color3.fromRGB(255, 255, 255)
+    button.Font = Enum.Font.GothamSemibold
+    button.TextSize = 16
+    button.Parent = tab.Page
 
     local corner = Instance.new("UICorner")
-    corner.CornerRadius = UDim.new(0, 10)
+    corner.CornerRadius = UDim.new(0, 8)
     corner.Parent = button
 
-    local originalTrans = button.BackgroundTransparency
-    button.MouseEnter:Connect(function()
-        TweenService:Create(button, TweenInfo.new(Style.AnimationSpeed), {
-            BackgroundTransparency = originalTrans + 0.2
-        }):Play()
-    end)
-    button.MouseLeave:Connect(function()
-        TweenService:Create(button, TweenInfo.new(Style.AnimationSpeed), {
-            BackgroundTransparency = originalTrans
-        }):Play()
-    end)
-    button.MouseButton1Click:Connect(function()
-        if callback then callback() end
-        TweenService:Create(button, TweenInfo.new(0.1), {BackgroundTransparency = originalTrans + 0.3}):Play()
-        task.wait(0.1)
-        TweenService:Create(button, TweenInfo.new(Style.AnimationSpeed), {BackgroundTransparency = originalTrans}):Play()
-    end)
+    button.MouseButton1Click:Connect(callback)
+    table.insert(tab.Elements, button)
     return button
 end
 
--- 开关 (Toggle)
-function AppleGlassUI:CreateToggle(parent, text, default, callback, position)
-    local frame = Instance.new("Frame")
-    frame.Size = UDim2.new(1, -30, 0, 45)
-    frame.Position = position or UDim2.new(0, 15, 0, 130)
-    frame.BackgroundTransparency = 1
-    frame.Parent = parent
+function Library:AddToggle(tab, text, default, callback)
+    local container = Instance.new("Frame")
+    container.Size = UDim2.new(1, -20, 0, 45)
+    container.BackgroundTransparency = 1
+    container.Parent = tab.Page
 
     local label = Instance.new("TextLabel")
-    label.Size = UDim2.new(0.6, 0, 1, 0)
+    label.Size = UDim2.new(0.7, 0, 1, 0)
     label.BackgroundTransparency = 1
-    label.Text = text or "Toggle"
-    label.TextColor3 = Style.TextColor
-    label.Font = Style.Font
-    label.TextSize = 18
-    label.TextScaled = true
+    label.Text = text
+    label.TextColor3 = Color3.fromRGB(240, 240, 255)
+    label.Font = Enum.Font.Gotham
+    label.TextSize = 15
     label.TextXAlignment = Enum.TextXAlignment.Left
-    label.Parent = frame
+    label.Parent = container
 
-    local toggleButton = Instance.new("TextButton")
-    toggleButton.Size = UDim2.new(0, 56, 0, 30)
-    toggleButton.Position = UDim2.new(1, -56, 0.5, -15)
-    toggleButton.BackgroundColor3 = default and Style.AccentColor or Color3.fromRGB(180, 180, 180)
-    toggleButton.BorderSizePixel = 0
-    toggleButton.Text = ""
-    toggleButton.AutoButtonColor = false
-    toggleButton.Parent = frame
+    local toggleFrame = Instance.new("Frame")
+    toggleFrame.Size = UDim2.new(0, 50, 0, 24)
+    toggleFrame.Position = UDim2.new(1, -55, 0.5, -12)
+    toggleFrame.BackgroundColor3 = default and Color3.fromRGB(100, 200, 100) or Color3.fromRGB(80, 80, 80)
+    toggleFrame.BorderSizePixel = 0
+    toggleFrame.Parent = container
 
     local toggleCorner = Instance.new("UICorner")
     toggleCorner.CornerRadius = UDim.new(1, 0)
-    toggleCorner.Parent = toggleButton
+    toggleCorner.Parent = toggleFrame
 
-    local knob = Instance.new("Frame")
-    knob.Size = UDim2.new(0, 24, 0, 24)
-    knob.Position = default and UDim2.new(1, -28, 0.5, -12) or UDim2.new(0, 4, 0.5, -12)
-    knob.BackgroundColor3 = Color3.fromRGB(255, 255, 255)
-    knob.BorderSizePixel = 0
-    knob.Parent = toggleButton
-    Instance.new("UICorner", knob).CornerRadius = UDim.new(1, 0)
+    local toggleKnob = Instance.new("Frame")
+    toggleKnob.Size = UDim2.new(0, 20, 0, 20)
+    toggleKnob.Position = default and UDim2.new(1, -22, 0.5, -10) or UDim2.new(0, 2, 0.5, -10)
+    toggleKnob.BackgroundColor3 = Color3.fromRGB(255, 255, 255)
+    toggleKnob.BorderSizePixel = 0
+    toggleKnob.Parent = toggleFrame
+
+    local knobCorner = Instance.new("UICorner")
+    knobCorner.CornerRadius = UDim.new(1, 0)
+    knobCorner.Parent = toggleKnob
 
     local state = default or false
     local function updateVisual()
-        local targetColor = state and Style.AccentColor or Color3.fromRGB(180, 180, 180)
-        local targetPos = state and UDim2.new(1, -28, 0.5, -12) or UDim2.new(0, 4, 0.5, -12)
-        TweenService:Create(toggleButton, TweenInfo.new(Style.AnimationSpeed), {BackgroundColor3 = targetColor}):Play()
-        TweenService:Create(knob, TweenInfo.new(Style.AnimationSpeed), {Position = targetPos}):Play()
+        local goalPos = state and UDim2.new(1, -22, 0.5, -10) or UDim2.new(0, 2, 0.5, -10)
+        TweenService:Create(toggleKnob, TweenInfo.new(0.2), {Position = goalPos}):Play()
+        toggleFrame.BackgroundColor3 = state and Color3.fromRGB(100, 200, 100) or Color3.fromRGB(80, 80, 80)
     end
 
-    toggleButton.MouseButton1Click:Connect(function()
-        state = not state
-        updateVisual()
-        if callback then callback(state) end
+    toggleFrame.InputBegan:Connect(function(input)
+        if input.UserInputType == Enum.UserInputType.MouseButton1 or input.UserInputType == Enum.UserInputType.Touch then
+            state = not state
+            updateVisual()
+            callback(state)
+        end
     end)
 
-    return {
-        Frame = frame,
-        SetState = function(self, newState)
-            if newState ~= state then
-                state = newState
-                updateVisual()
-            end
-        end,
-        GetState = function() return state end
-    }
+    table.insert(tab.Elements, container)
+    return container
 end
 
--- 滑块 (Slider)
-function AppleGlassUI:CreateSlider(parent, text, min, max, default, callback, position)
-    min, max, default = min or 0, max or 100, default or 50
-    local frame = Instance.new("Frame")
-    frame.Size = UDim2.new(1, -30, 0, 55)
-    frame.Position = position or UDim2.new(0, 15, 0, 190)
-    frame.BackgroundTransparency = 1
-    frame.Parent = parent
+function Library:AddSlider(tab, text, min, max, default, callback)
+    local container = Instance.new("Frame")
+    container.Size = UDim2.new(1, -20, 0, 60)
+    container.BackgroundTransparency = 1
+    container.Parent = tab.Page
 
     local label = Instance.new("TextLabel")
-    label.Size = UDim2.new(0.6, 0, 0, 22)
+    label.Size = UDim2.new(1, 0, 0, 20)
     label.BackgroundTransparency = 1
-    label.Text = text or "Slider"
-    label.TextColor3 = Style.TextColor
-    label.Font = Style.Font
-    label.TextSize = 18
+    label.Text = text .. ": " .. tostring(default)
+    label.TextColor3 = Color3.fromRGB(240, 240, 255)
+    label.Font = Enum.Font.Gotham
+    label.TextSize = 14
     label.TextXAlignment = Enum.TextXAlignment.Left
-    label.Parent = frame
+    label.Parent = container
 
-    local valueLabel = Instance.new("TextLabel")
-    valueLabel.Size = UDim2.new(0.4, 0, 0, 22)
-    valueLabel.Position = UDim2.new(0.6, 0, 0, 0)
-    valueLabel.BackgroundTransparency = 1
-    valueLabel.Text = tostring(default)
-    valueLabel.TextColor3 = Style.SubTextColor
-    valueLabel.Font = Style.Font
-    valueLabel.TextSize = 16
-    valueLabel.TextXAlignment = Enum.TextXAlignment.Right
-    valueLabel.Parent = frame
+    local sliderFrame = Instance.new("Frame")
+    sliderFrame.Size = UDim2.new(1, 0, 0, 24)
+    sliderFrame.Position = UDim2.new(0, 0, 0, 25)
+    sliderFrame.BackgroundColor3 = Color3.fromRGB(50, 50, 60)
+    sliderFrame.BorderSizePixel = 0
+    sliderFrame.Parent = container
 
-    local sliderBg = Instance.new("Frame")
-    sliderBg.Size = UDim2.new(1, 0, 0, 6)
-    sliderBg.Position = UDim2.new(0, 0, 0, 32)
-    sliderBg.BackgroundColor3 = Color3.fromRGB(220, 220, 220)
-    sliderBg.BorderSizePixel = 0
-    sliderBg.Parent = frame
-    Instance.new("UICorner", sliderBg).CornerRadius = UDim.new(0, 3)
+    local sliderCorner = Instance.new("UICorner")
+    sliderCorner.CornerRadius = UDim.new(0, 6)
+    sliderCorner.Parent = sliderFrame
 
     local fill = Instance.new("Frame")
     fill.Size = UDim2.new((default - min) / (max - min), 0, 1, 0)
-    fill.BackgroundColor3 = Style.AccentColor
+    fill.BackgroundColor3 = Color3.fromRGB(100, 150, 255)
     fill.BorderSizePixel = 0
-    fill.Parent = sliderBg
-    Instance.new("UICorner", fill).CornerRadius = UDim.new(0, 3)
+    fill.Parent = sliderFrame
 
-    local knob = Instance.new("Frame")
-    knob.Size = UDim2.new(0, 20, 0, 20)
-    knob.Position = UDim2.new((default - min) / (max - min), -10, 0.5, -10)
+    local fillCorner = Instance.new("UICorner")
+    fillCorner.CornerRadius = UDim.new(0, 6)
+    fillCorner.Parent = fill
+
+    local knob = Instance.new("TextButton")
+    knob.Size = UDim2.new(0, 14, 0, 14)
+    knob.Position = UDim2.new((default - min) / (max - min), -7, 0.5, -7)
     knob.BackgroundColor3 = Color3.fromRGB(255, 255, 255)
     knob.BorderSizePixel = 0
-    knob.Parent = sliderBg
-    Instance.new("UICorner", knob).CornerRadius = UDim.new(1, 0)
+    knob.Text = ""
+    knob.Parent = sliderFrame
+
+    local knobCorner = Instance.new("UICorner")
+    knobCorner.CornerRadius = UDim.new(1, 0)
+    knobCorner.Parent = knob
 
     local dragging = false
     local function updateSlider(input)
-        local relX = math.clamp((input.Position.X - sliderBg.AbsolutePosition.X) / sliderBg.AbsoluteSize.X, 0, 1)
-        local val = min + (max - min) * relX
-        valueLabel.Text = string.format("%.1f", val)
-        fill.Size = UDim2.new(relX, 0, 1, 0)
-        knob.Position = UDim2.new(relX, -10, 0.5, -10)
-        if callback then callback(val) end
+        local relativePos = math.clamp((input.Position.X - sliderFrame.AbsolutePosition.X) / sliderFrame.AbsoluteSize.X, 0, 1)
+        local value = min + (max - min) * relativePos
+        fill.Size = UDim2.new(relativePos, 0, 1, 0)
+        knob.Position = UDim2.new(relativePos, -7, 0.5, -7)
+        label.Text = text .. ": " .. string.format("%.2f", value)
+        callback(value)
     end
 
     knob.InputBegan:Connect(function(input)
-        if input.UserInputType == Enum.UserInputType.MouseButton1 then dragging = true end
+        if input.UserInputType == Enum.UserInputType.MouseButton1 or input.UserInputType == Enum.UserInputType.Touch then
+            dragging = true
+        end
     end)
-    knob.InputEnded:Connect(function(input)
-        if input.UserInputType == Enum.UserInputType.MouseButton1 then dragging = false end
+
+    UserInputService.InputEnded:Connect(function(input)
+        if input.UserInputType == Enum.UserInputType.MouseButton1 or input.UserInputType == Enum.UserInputType.Touch then
+            dragging = false
+        end
     end)
-    sliderBg.InputBegan:Connect(function(input)
-        if input.UserInputType == Enum.UserInputType.MouseButton1 then
+
+    UserInputService.InputChanged:Connect(function(input)
+        if dragging and (input.UserInputType == Enum.UserInputType.MouseMovement or input.UserInputType == Enum.UserInputType.Touch) then
+            updateSlider(input)
+        end
+    end)
+
+    sliderFrame.InputBegan:Connect(function(input)
+        if input.UserInputType == Enum.UserInputType.MouseButton1 or input.UserInputType == Enum.UserInputType.Touch then
             updateSlider(input)
             dragging = true
         end
     end)
-    UserInputService.InputChanged:Connect(function(input)
-        if dragging and input.UserInputType == Enum.UserInputType.MouseMovement then
-            updateSlider(input)
-        end
-    end)
-    UserInputService.InputEnded:Connect(function(input)
-        if input.UserInputType == Enum.UserInputType.MouseButton1 then dragging = false end
-    end)
 
-    return {
-        Frame = frame,
-        SetValue = function(self, newVal)
-            local rel = (newVal - min) / (max - min)
-            valueLabel.Text = string.format("%.1f", newVal)
-            fill.Size = UDim2.new(rel, 0, 1, 0)
-            knob.Position = UDim2.new(rel, -10, 0.5, -10)
-        end
-    }
+    table.insert(tab.Elements, container)
+    return container
 end
 
--- 下拉菜单 (修复版)
-function AppleGlassUI:CreateDropdown(parent, options, defaultIndex, callback, position)
-    local frame = Instance.new("Frame")
-    frame.Size = UDim2.new(1, -30, 0, 45)
-    frame.Position = position or UDim2.new(0, 15, 0, 260)
-    frame.BackgroundTransparency = 1
-    frame.Parent = parent
+function Library:AddDropdown(tab, text, options, callback)
+    local container = Instance.new("Frame")
+    container.Size = UDim2.new(1, -20, 0, 45)
+    container.BackgroundTransparency = 1
+    container.Parent = tab.Page
 
-    local button = Instance.new("TextButton")
-    button.Size = UDim2.new(1, 0, 0, 40)
-    button.BackgroundColor3 = Color3.fromRGB(240, 240, 240)
-    button.BackgroundTransparency = 0.4
-    button.BorderSizePixel = 0
-    button.Text = options[defaultIndex or 1] or "Select"
-    button.TextColor3 = Style.TextColor
-    button.Font = Style.Font
-    button.TextSize = 18
-    button.TextXAlignment = Enum.TextXAlignment.Left
-    button.Parent = frame
-    Instance.new("UICorner", button).CornerRadius = UDim.new(0, 10)
+    local label = Instance.new("TextLabel")
+    label.Size = UDim2.new(0.4, 0, 1, 0)
+    label.BackgroundTransparency = 1
+    label.Text = text
+    label.TextColor3 = Color3.fromRGB(240, 240, 255)
+    label.Font = Enum.Font.Gotham
+    label.TextSize = 15
+    label.TextXAlignment = Enum.TextXAlignment.Left
+    label.Parent = container
 
-    local arrow = Instance.new("ImageLabel")
-    arrow.Size = UDim2.new(0, 24, 0, 24)
-    arrow.Position = UDim2.new(1, -30, 0.5, -12)
-    arrow.BackgroundTransparency = 1
-    arrow.Image = "rbxassetid://7072707677"
-    arrow.Parent = button
+    local dropdownBtn = Instance.new("TextButton")
+    dropdownBtn.Size = UDim2.new(0.55, 0, 0, 35)
+    dropdownBtn.Position = UDim2.new(0.45, 0, 0.5, -17)
+    dropdownBtn.BackgroundColor3 = Color3.fromRGB(50, 50, 60)
+    dropdownBtn.BorderSizePixel = 0
+    dropdownBtn.Text = options[1] or "Select..."
+    dropdownBtn.TextColor3 = Color3.fromRGB(255, 255, 255)
+    dropdownBtn.Font = Enum.Font.Gotham
+    dropdownBtn.TextSize = 14
+    dropdownBtn.Parent = container
 
-    -- 下拉列表容器 (放在 ScreenGui 上层)
-    local dropdownList = Instance.new("ScrollingFrame")
-    dropdownList.Size = UDim2.new(1, 0, 0, 0)
-    dropdownList.Position = UDim2.new(0, 0, 1, 5)
-    dropdownList.BackgroundColor3 = Color3.fromRGB(255, 255, 255)
-    dropdownList.BackgroundTransparency = 0.2
-    dropdownList.BorderSizePixel = 0
-    dropdownList.Visible = false
-    dropdownList.CanvasSize = UDim2.new(0, 0, 0, #options * 36)
-    dropdownList.ScrollBarThickness = 6
-    dropdownList.ZIndex = 10
-    dropdownList.Parent = frame
-    Instance.new("UICorner", dropdownList).CornerRadius = UDim.new(0, 10)
+    local ddCorner = Instance.new("UICorner")
+    ddCorner.CornerRadius = UDim.new(0, 6)
+    ddCorner.Parent = dropdownBtn
+
+    local listFrame = Instance.new("Frame")
+    listFrame.Size = UDim2.new(0.55, 0, 0, 0)
+    listFrame.Position = UDim2.new(0.45, 0, 0.5, 18)
+    listFrame.BackgroundColor3 = Color3.fromRGB(40, 40, 50)
+    listFrame.BorderSizePixel = 0
+    listFrame.Visible = false
+    listFrame.ZIndex = 15
+    listFrame.Parent = container
+
+    local listCorner = Instance.new("UICorner")
+    listCorner.CornerRadius = UDim.new(0, 6)
+    listCorner.Parent = listFrame
 
     local listLayout = Instance.new("UIListLayout")
-    listLayout.Padding = UDim.new(0, 4)
-    listLayout.Parent = dropdownList
+    listLayout.Parent = listFrame
 
-    local selected = options[defaultIndex or 1]
-    local optionButtons = {}
+    local opened = false
+    dropdownBtn.MouseButton1Click:Connect(function()
+        opened = not opened
+        listFrame.Visible = opened
+        if opened then
+            local count = #options
+            listFrame.Size = UDim2.new(0.55, 0, 0, math.min(count * 30, 150))
+        end
+    end)
 
-    for i, opt in ipairs(options) do
+    for i, option in ipairs(options) do
         local optBtn = Instance.new("TextButton")
-        optBtn.Size = UDim2.new(1, -8, 0, 32)
-        optBtn.BackgroundColor3 = Color3.fromRGB(245, 245, 245)
-        optBtn.BackgroundTransparency = 0.3
+        optBtn.Size = UDim2.new(1, 0, 0, 30)
+        optBtn.BackgroundColor3 = Color3.fromRGB(50, 50, 60)
         optBtn.BorderSizePixel = 0
-        optBtn.Text = opt
-        optBtn.TextColor3 = Style.TextColor
-        optBtn.Font = Style.Font
-        optBtn.TextSize = 16
-        optBtn.ZIndex = 10
-        optBtn.Parent = dropdownList
-        Instance.new("UICorner", optBtn).CornerRadius = UDim.new(0, 8)
+        optBtn.Text = option
+        optBtn.TextColor3 = Color3.fromRGB(255, 255, 255)
+        optBtn.Font = Enum.Font.Gotham
+        optBtn.TextSize = 14
+        optBtn.ZIndex = 16
+        optBtn.Parent = listFrame
 
         optBtn.MouseButton1Click:Connect(function()
-            selected = opt
-            button.Text = opt
-            dropdownList.Visible = false
-            if callback then callback(opt) end
+            dropdownBtn.Text = option
+            listFrame.Visible = false
+            opened = false
+            callback(option)
         end)
-
-        table.insert(optionButtons, optBtn)
     end
 
-    button.MouseButton1Click:Connect(function()
-        dropdownList.Visible = not dropdownList.Visible
-        if dropdownList.Visible then
-            local itemCount = #options
-            dropdownList.CanvasSize = UDim2.new(0, 0, 0, itemCount * 36 + (itemCount-1)*4)
-            dropdownList.Size = UDim2.new(1, 0, 0, math.min(itemCount * 40, 200))
-        end
-    end)
-
-    -- 点击外部关闭 (延迟绑定避免误触)
-    local function onInputBegan(input)
-        if input.UserInputType == Enum.UserInputType.MouseButton1 then
-            if dropdownList.Visible and not frame:IsAncestorOf(input.UserInputState) then
-                dropdownList.Visible = false
-            end
-        end
-    end
-    UserInputService.InputBegan:Connect(onInputBegan)
-
-    return {
-        Frame = frame,
-        GetSelected = function() return selected end,
-        SetSelected = function(self, newOpt)
-            for i, opt in ipairs(options) do
-                if opt == newOpt then
-                    selected = opt
-                    button.Text = opt
-                    break
-                end
-            end
-        end
-    }
+    table.insert(tab.Elements, container)
+    return container
 end
 
--- 创建悬浮球 (可拖动，点击切换窗口)
-function AppleGlassUI:CreateFloatingBall(parentWindow, onClick)
-    local screenGui = parentWindow.ScreenGui
-    local ball = Instance.new("ImageButton")
-    ball.Size = UDim2.new(0, 60, 0, 60)
-    ball.Position = UDim2.new(0, 20, 0.5, -30)
-    ball.BackgroundColor3 = Style.AccentColor
-    ball.BackgroundTransparency = 0.2
-    ball.BorderSizePixel = 0
-    ball.Image = "rbxassetid://7072725342" -- 可替换为你的图标
-    ball.ImageColor3 = Color3.fromRGB(255, 255, 255)
-    ball.ScaleType = Enum.ScaleType.Fit
-    ball.ZIndex = 5
-    ball.Parent = screenGui
-    Instance.new("UICorner", ball).CornerRadius = UDim.new(1, 0)
+function Library:AddLabel(tab, text)
+    local label = Instance.new("TextLabel")
+    label.Size = UDim2.new(1, -20, 0, 30)
+    label.BackgroundTransparency = 1
+    label.Text = text
+    label.TextColor3 = Color3.fromRGB(200, 200, 220)
+    label.Font = Enum.Font.Gotham
+    label.TextSize = 14
+    label.TextXAlignment = Enum.TextXAlignment.Left
+    label.Parent = tab.Page
 
-    -- 阴影
-    local shadow = Instance.new("Frame")
-    shadow.Size = UDim2.new(1, 0, 1, 0)
-    shadow.Position = UDim2.new(0, 3, 0, 5)
-    shadow.BackgroundColor3 = Color3.fromRGB(0, 0, 0)
-    shadow.BackgroundTransparency = 0.7
-    shadow.BorderSizePixel = 0
-    shadow.ZIndex = ball.ZIndex - 1
-    shadow.Parent = ball
-    Instance.new("UICorner", shadow).CornerRadius = UDim.new(1, 0)
-
-    -- 拖动逻辑
-    local dragging = false
-    local dragStart, startPos
-
-    ball.InputBegan:Connect(function(input)
-        if input.UserInputType == Enum.UserInputType.MouseButton1 then
-            dragging = true
-            dragStart = input.Position
-            startPos = ball.Position
-        end
-    end)
-
-    ball.InputEnded:Connect(function(input)
-        if input.UserInputType == Enum.UserInputType.MouseButton1 then
-            dragging = false
-        end
-    end)
-
-    UserInputService.InputChanged:Connect(function(input)
-        if dragging and input.UserInputType == Enum.UserInputType.MouseMovement then
-            local delta = input.Position - dragStart
-            local newX = math.clamp(startPos.X.Offset + delta.X, 0, screenGui.AbsoluteSize.X - ball.AbsoluteSize.X)
-            local newY = math.clamp(startPos.Y.Offset + delta.Y, 0, screenGui.AbsoluteSize.Y - ball.AbsoluteSize.Y)
-            ball.Position = UDim2.new(0, newX, 0, newY)
-        end
-    end)
-
-    -- 点击事件
-    ball.MouseButton1Click:Connect(function()
-        if not dragging then
-            parentWindow.MainFrame.Visible = not parentWindow.MainFrame.Visible
-            if onClick then onClick(parentWindow.MainFrame.Visible) end
-        end
-    end)
-
-    return ball
+    table.insert(tab.Elements, label)
+    return label
 end
 
--- 创建完整窗口 (主入口)
-function AppleGlassUI:CreateWindow(title, subtitle)
-    local screenGui = Instance.new("ScreenGui")
-    screenGui.Parent = (RunService:IsStudio() and LocalPlayer:WaitForChild("PlayerGui")) or game.CoreGui
-    screenGui.IgnoreGuiInset = true
-
-    -- 根据屏幕大小计算窗口尺寸 (自适应)
-    local screenSize = screenGui.AbsoluteSize
-    local windowWidth = math.min(450, screenSize.X * 0.4)
-    local windowHeight = math.min(600, screenSize.Y * 0.7)
-
-    local mainFrame = self:CreateGlassFrame(
-        screenGui,
-        UDim2.new(0, windowWidth, 0, windowHeight),
-        UDim2.new(0.5, -windowWidth/2, 0.5, -windowHeight/2),
-        Vector2.new(0, 0)
-    )
-    mainFrame.Visible = true
-
-    -- 标题栏 (用于拖动，并给予可见背景)
-    local titleBar = Instance.new("Frame")
-    titleBar.Size = UDim2.new(1, 0, 0, 60)
-    titleBar.BackgroundColor3 = Style.BackgroundColor
-    titleBar.BackgroundTransparency = 0.9  -- 半透明可见，保证能点击
-    titleBar.BorderSizePixel = 0
-    titleBar.Parent = mainFrame
-
-    local titleCorner = Instance.new("UICorner")
-    titleCorner.CornerRadius = Style.CornerRadius
-    titleCorner.Parent = titleBar
-
-    -- 拖动功能 (使用 titleBar 本身)
-    local dragging = false
-    local dragStart, startPos
-    titleBar.InputBegan:Connect(function(input)
-        if input.UserInputType == Enum.UserInputType.MouseButton1 then
-            dragging = true
-            dragStart = input.Position
-            startPos = mainFrame.Position
-        end
-    end)
-    titleBar.InputEnded:Connect(function(input)
-        if input.UserInputType == Enum.UserInputType.MouseButton1 then
-            dragging = false
-        end
-    end)
-    UserInputService.InputChanged:Connect(function(input)
-        if dragging and input.UserInputType == Enum.UserInputType.MouseMovement then
-            local delta = input.Position - dragStart
-            mainFrame.Position = UDim2.new(
-                startPos.X.Scale, startPos.X.Offset + delta.X,
-                startPos.Y.Scale, startPos.Y.Offset + delta.Y
-            )
-        end
-    end)
-
-    self:CreateTitle(mainFrame, title or "Apple Glass UI", 26)
-    self:CreateDescription(mainFrame, subtitle or "Elegant • Minimal • Powerful", 16)
-    self:CreateDivider(mainFrame, UDim2.new(0, 15, 0, 75))
-
-    local contentFrame = Instance.new("Frame")
-    contentFrame.Size = UDim2.new(1, 0, 1, -85)
-    contentFrame.Position = UDim2.new(0, 0, 0, 85)
-    contentFrame.BackgroundTransparency = 1
-    contentFrame.Parent = mainFrame
-
-    local windowObj = {
-        ScreenGui = screenGui,
-        MainFrame = mainFrame,
-        ContentFrame = contentFrame,
-        -- 便捷方法
-        AddButton = function(self, text, callback)
-            return AppleGlassUI:CreateButton(contentFrame, text, callback)
-        end,
-        AddToggle = function(self, text, default, callback)
-            return AppleGlassUI:CreateToggle(contentFrame, text, default, callback)
-        end,
-        AddSlider = function(self, text, min, max, default, callback)
-            return AppleGlassUI:CreateSlider(contentFrame, text, min, max, default, callback)
-        end,
-        AddDropdown = function(self, options, defaultIndex, callback)
-            return AppleGlassUI:CreateDropdown(contentFrame, options, defaultIndex, callback)
-        end,
-    }
-
-    -- 自动添加悬浮球
-    windowObj.FloatingBall = self:CreateFloatingBall(windowObj)
-
-    return windowObj
+-- 公开：直接切换可见性
+function Library:SetVisible(bool)
+    self.MainFrame.Visible = bool
+    self.Active = bool
 end
 
-return AppleGlassUI
+return Library
