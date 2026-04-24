@@ -1,6 +1,6 @@
 --[[
-    精美自适应通用 UI 库 (支持 PC & Mobile)
-    核心特性: 全端自适应居中, 顺滑拖拽, 悬浮球唤醒, 动态模块创建
+    精美自适应通用 UI 库 (白色透明主题，圆角设计)
+    支持 PC & Mobile，悬浮球唤醒，动态模块创建
 ]]
 
 local UserInputService = game:GetService("UserInputService")
@@ -43,7 +43,6 @@ local function MakeDraggable(dragArea, moveObject)
     UserInputService.InputChanged:Connect(function(input)
         if input == dragInput and dragging then
             local delta = input.Position - dragStart
-            -- 考虑到 AnchorPoint, 我们使用 Offset 进行位移
             moveObject.Position = UDim2.new(
                 startPos.X.Scale, startPos.X.Offset + delta.X,
                 startPos.Y.Scale, startPos.Y.Offset + delta.Y
@@ -72,14 +71,15 @@ function Library:CreateWindow(options)
     ScreenGui.ZIndexBehavior = Enum.ZIndexBehavior.Sibling
     ScreenGui.Parent = targetGui
 
-    -- 悬浮球 (可拖拽, 点击显示/隐藏主UI)
+    -- 悬浮球 (可拖拽, 点击显示/隐藏主UI) - 白色半透明
     local FloatingBall = Instance.new("TextButton")
     FloatingBall.Name = "FloatingBall"
     FloatingBall.Size = UDim2.new(0, 50, 0, 50)
     FloatingBall.Position = UDim2.new(0.1, 0, 0.1, 0)
-    FloatingBall.BackgroundColor3 = Color3.fromRGB(30, 30, 30)
+    FloatingBall.BackgroundColor3 = Color3.fromRGB(255, 255, 255)
+    FloatingBall.BackgroundTransparency = 0.3
     FloatingBall.Text = "UI"
-    FloatingBall.TextColor3 = AccentColor
+    FloatingBall.TextColor3 = Color3.fromRGB(40, 40, 40)
     FloatingBall.Font = Enum.Font.GothamBold
     FloatingBall.TextSize = 18
     FloatingBall.Parent = ScreenGui
@@ -89,17 +89,18 @@ function Library:CreateWindow(options)
     UIStrokeBall.Color = AccentColor
     UIStrokeBall.Thickness = 2
 
-    -- 主UI框架 (自适应居中)
+    -- 主UI框架 (自适应居中) - 白色半透明，圆角加大
     local MainFrame = Instance.new("Frame")
     MainFrame.Name = "MainFrame"
     MainFrame.AnchorPoint = Vector2.new(0.5, 0.5)
     MainFrame.Position = UDim2.new(0.5, 0, 0.5, 0)
-    MainFrame.Size = UDim2.new(0.9, 0, 0.85, 0) -- 比例尺寸，适配手机
-    MainFrame.BackgroundColor3 = Color3.fromRGB(25, 25, 25)
+    MainFrame.Size = UDim2.new(0.9, 0, 0.85, 0)
+    MainFrame.BackgroundColor3 = Color3.fromRGB(255, 255, 255)
+    MainFrame.BackgroundTransparency = 0.2
     MainFrame.BorderSizePixel = 0
     MainFrame.ClipsDescendants = true
     MainFrame.Parent = ScreenGui
-    AddCorner(MainFrame, 8)
+    AddCorner(MainFrame, 16) -- 主体圆角设计
 
     -- 尺寸限制 (防止PC屏幕过大时失真)
     local SizeConstraint = Instance.new("UISizeConstraint")
@@ -107,11 +108,12 @@ function Library:CreateWindow(options)
     SizeConstraint.MinSize = Vector2.new(300, 250)
     SizeConstraint.Parent = MainFrame
 
-    -- 拖拽区域与顶部标题
+    -- 拖拽区域与顶部标题 - 白色半透明
     local TopBar = Instance.new("Frame")
     TopBar.Name = "TopBar"
     TopBar.Size = UDim2.new(1, 0, 0, 40)
-    TopBar.BackgroundColor3 = Color3.fromRGB(20, 20, 20)
+    TopBar.BackgroundColor3 = Color3.fromRGB(255, 255, 255)
+    TopBar.BackgroundTransparency = 0.3
     TopBar.BorderSizePixel = 0
     TopBar.Parent = MainFrame
 
@@ -120,18 +122,19 @@ function Library:CreateWindow(options)
     TitleLabel.Position = UDim2.new(0, 15, 0, 0)
     TitleLabel.BackgroundTransparency = 1
     TitleLabel.Text = WindowTitle
-    TitleLabel.TextColor3 = Color3.fromRGB(255, 255, 255)
+    TitleLabel.TextColor3 = Color3.fromRGB(30, 30, 30)
     TitleLabel.Font = Enum.Font.GothamBold
     TitleLabel.TextSize = 16
     TitleLabel.TextXAlignment = Enum.TextXAlignment.Left
     TitleLabel.Parent = TopBar
 
-    -- 侧边栏 (导航区)
+    -- 侧边栏 (导航区) - 白色半透明
     local Sidebar = Instance.new("Frame")
     Sidebar.Name = "Sidebar"
     Sidebar.Size = UDim2.new(0, 130, 1, -40)
     Sidebar.Position = UDim2.new(0, 0, 0, 40)
-    Sidebar.BackgroundColor3 = Color3.fromRGB(30, 30, 30)
+    Sidebar.BackgroundColor3 = Color3.fromRGB(255, 255, 255)
+    Sidebar.BackgroundTransparency = 0.3
     Sidebar.BorderSizePixel = 0
     Sidebar.Parent = MainFrame
 
@@ -174,13 +177,14 @@ function Library:CreateWindow(options)
         local TabButton = Instance.new("TextButton")
         TabButton.Name = TabName
         TabButton.Size = UDim2.new(0.9, 0, 0, 30)
-        TabButton.BackgroundColor3 = Color3.fromRGB(20, 20, 20)
+        TabButton.BackgroundColor3 = Color3.fromRGB(240, 240, 240) -- 浅色未激活
+        TabButton.BackgroundTransparency = 0.2
         TabButton.Text = TabName
-        TabButton.TextColor3 = Color3.fromRGB(200, 200, 200)
+        TabButton.TextColor3 = Color3.fromRGB(50, 50, 50)
         TabButton.Font = Enum.Font.GothamSemibold
         TabButton.TextSize = 14
         TabButton.Parent = TabContainer
-        AddCorner(TabButton, 6)
+        AddCorner(TabButton, 8) -- 圆角
 
         local TabPage = Instance.new("ScrollingFrame")
         TabPage.Name = TabName .. "_Page"
@@ -205,6 +209,7 @@ function Library:CreateWindow(options)
         if FirstTab then
             TabButton.BackgroundColor3 = AccentColor
             TabButton.TextColor3 = Color3.fromRGB(255, 255, 255)
+            TabButton.BackgroundTransparency = 0
             FirstTab = false
         end
 
@@ -215,10 +220,18 @@ function Library:CreateWindow(options)
             for _, tabData in pairs(Tabs) do
                 if tabData.Button == TabButton then
                     tabData.Page.Visible = true
-                    TweenService:Create(tabData.Button, TweenInfo.new(0.2), {BackgroundColor3 = AccentColor, TextColor3 = Color3.fromRGB(255, 255, 255)}):Play()
+                    TweenService:Create(tabData.Button, TweenInfo.new(0.2), {
+                        BackgroundColor3 = AccentColor,
+                        TextColor3 = Color3.fromRGB(255, 255, 255),
+                        BackgroundTransparency = 0
+                    }):Play()
                 else
                     tabData.Page.Visible = false
-                    TweenService:Create(tabData.Button, TweenInfo.new(0.2), {BackgroundColor3 = Color3.fromRGB(20, 20, 20), TextColor3 = Color3.fromRGB(200, 200, 200)}):Play()
+                    TweenService:Create(tabData.Button, TweenInfo.new(0.2), {
+                        BackgroundColor3 = Color3.fromRGB(240, 240, 240),
+                        TextColor3 = Color3.fromRGB(50, 50, 50),
+                        BackgroundTransparency = 0.2
+                    }):Play()
                 end
             end
         end)
@@ -229,16 +242,17 @@ function Library:CreateWindow(options)
         function Elements:CreateLabel(text)
             local LabelFrame = Instance.new("Frame")
             LabelFrame.Size = UDim2.new(1, 0, 0, 30)
-            LabelFrame.BackgroundColor3 = Color3.fromRGB(35, 35, 35)
+            LabelFrame.BackgroundColor3 = Color3.fromRGB(245, 245, 245)
+            LabelFrame.BackgroundTransparency = 0.2
             LabelFrame.Parent = TabPage
-            AddCorner(LabelFrame, 6)
+            AddCorner(LabelFrame, 8)
 
             local Label = Instance.new("TextLabel")
             Label.Size = UDim2.new(1, -20, 1, 0)
             Label.Position = UDim2.new(0, 10, 0, 0)
             Label.BackgroundTransparency = 1
             Label.Text = text
-            Label.TextColor3 = Color3.fromRGB(255, 255, 255)
+            Label.TextColor3 = Color3.fromRGB(40, 40, 40)
             Label.Font = Enum.Font.Gotham
             Label.TextSize = 14
             Label.TextXAlignment = Enum.TextXAlignment.Left
@@ -249,19 +263,28 @@ function Library:CreateWindow(options)
         function Elements:CreateButton(text, callback)
             local Button = Instance.new("TextButton")
             Button.Size = UDim2.new(1, 0, 0, 35)
-            Button.BackgroundColor3 = Color3.fromRGB(40, 40, 40)
+            Button.BackgroundColor3 = Color3.fromRGB(230, 230, 230)
+            Button.BackgroundTransparency = 0.1
             Button.Text = text
-            Button.TextColor3 = Color3.fromRGB(255, 255, 255)
+            Button.TextColor3 = Color3.fromRGB(30, 30, 30)
             Button.Font = Enum.Font.GothamSemibold
             Button.TextSize = 14
             Button.Parent = TabPage
-            AddCorner(Button, 6)
+            AddCorner(Button, 8)
 
             Button.MouseEnter:Connect(function()
-                TweenService:Create(Button, TweenInfo.new(0.2), {BackgroundColor3 = AccentColor}):Play()
+                TweenService:Create(Button, TweenInfo.new(0.2), {
+                    BackgroundColor3 = AccentColor,
+                    TextColor3 = Color3.fromRGB(255, 255, 255),
+                    BackgroundTransparency = 0
+                }):Play()
             end)
             Button.MouseLeave:Connect(function()
-                TweenService:Create(Button, TweenInfo.new(0.2), {BackgroundColor3 = Color3.fromRGB(40, 40, 40)}):Play()
+                TweenService:Create(Button, TweenInfo.new(0.2), {
+                    BackgroundColor3 = Color3.fromRGB(230, 230, 230),
+                    TextColor3 = Color3.fromRGB(30, 30, 30),
+                    BackgroundTransparency = 0.1
+                }):Play()
             end)
 
             Button.MouseButton1Click:Connect(function()
@@ -274,16 +297,17 @@ function Library:CreateWindow(options)
             local toggled = default or false
             local ToggleFrame = Instance.new("Frame")
             ToggleFrame.Size = UDim2.new(1, 0, 0, 35)
-            ToggleFrame.BackgroundColor3 = Color3.fromRGB(35, 35, 35)
+            ToggleFrame.BackgroundColor3 = Color3.fromRGB(245, 245, 245)
+            ToggleFrame.BackgroundTransparency = 0.2
             ToggleFrame.Parent = TabPage
-            AddCorner(ToggleFrame, 6)
+            AddCorner(ToggleFrame, 8)
 
             local ToggleLabel = Instance.new("TextLabel")
             ToggleLabel.Size = UDim2.new(1, -60, 1, 0)
             ToggleLabel.Position = UDim2.new(0, 10, 0, 0)
             ToggleLabel.BackgroundTransparency = 1
             ToggleLabel.Text = text
-            ToggleLabel.TextColor3 = Color3.fromRGB(255, 255, 255)
+            ToggleLabel.TextColor3 = Color3.fromRGB(40, 40, 40)
             ToggleLabel.Font = Enum.Font.Gotham
             ToggleLabel.TextSize = 14
             ToggleLabel.TextXAlignment = Enum.TextXAlignment.Left
@@ -292,7 +316,8 @@ function Library:CreateWindow(options)
             local ToggleBtn = Instance.new("TextButton")
             ToggleBtn.Size = UDim2.new(0, 40, 0, 20)
             ToggleBtn.Position = UDim2.new(1, -50, 0.5, -10)
-            ToggleBtn.BackgroundColor3 = toggled and AccentColor or Color3.fromRGB(60, 60, 60)
+            ToggleBtn.BackgroundColor3 = toggled and AccentColor or Color3.fromRGB(180, 180, 180)
+            ToggleBtn.BackgroundTransparency = 0.1
             ToggleBtn.Text = ""
             ToggleBtn.Parent = ToggleFrame
             AddCorner(ToggleBtn, 10)
@@ -301,12 +326,13 @@ function Library:CreateWindow(options)
             Indicator.Size = UDim2.new(0, 16, 0, 16)
             Indicator.Position = toggled and UDim2.new(1, -18, 0.5, -8) or UDim2.new(0, 2, 0.5, -8)
             Indicator.BackgroundColor3 = Color3.fromRGB(255, 255, 255)
+            Indicator.BackgroundTransparency = 0
             Indicator.Parent = ToggleBtn
             AddCorner(Indicator, 8)
 
             local function FireToggle()
                 toggled = not toggled
-                local goalColor = toggled and AccentColor or Color3.fromRGB(60, 60, 60)
+                local goalColor = toggled and AccentColor or Color3.fromRGB(180, 180, 180)
                 local goalPos = toggled and UDim2.new(1, -18, 0.5, -8) or UDim2.new(0, 2, 0.5, -8)
                 
                 TweenService:Create(ToggleBtn, TweenInfo.new(0.2), {BackgroundColor3 = goalColor}):Play()
@@ -321,16 +347,17 @@ function Library:CreateWindow(options)
         function Elements:CreateSlider(text, min, max, default, callback)
             local SliderFrame = Instance.new("Frame")
             SliderFrame.Size = UDim2.new(1, 0, 0, 50)
-            SliderFrame.BackgroundColor3 = Color3.fromRGB(35, 35, 35)
+            SliderFrame.BackgroundColor3 = Color3.fromRGB(245, 245, 245)
+            SliderFrame.BackgroundTransparency = 0.2
             SliderFrame.Parent = TabPage
-            AddCorner(SliderFrame, 6)
+            AddCorner(SliderFrame, 8)
 
             local SliderLabel = Instance.new("TextLabel")
             SliderLabel.Size = UDim2.new(1, -20, 0, 25)
             SliderLabel.Position = UDim2.new(0, 10, 0, 0)
             SliderLabel.BackgroundTransparency = 1
             SliderLabel.Text = text .. " : " .. tostring(default)
-            SliderLabel.TextColor3 = Color3.fromRGB(255, 255, 255)
+            SliderLabel.TextColor3 = Color3.fromRGB(40, 40, 40)
             SliderLabel.Font = Enum.Font.Gotham
             SliderLabel.TextSize = 14
             SliderLabel.TextXAlignment = Enum.TextXAlignment.Left
@@ -339,7 +366,8 @@ function Library:CreateWindow(options)
             local BarBackground = Instance.new("Frame")
             BarBackground.Size = UDim2.new(1, -20, 0, 8)
             BarBackground.Position = UDim2.new(0, 10, 0, 30)
-            BarBackground.BackgroundColor3 = Color3.fromRGB(60, 60, 60)
+            BarBackground.BackgroundColor3 = Color3.fromRGB(200, 200, 200)
+            BarBackground.BackgroundTransparency = 0.3
             BarBackground.Parent = SliderFrame
             AddCorner(BarBackground, 4)
 
