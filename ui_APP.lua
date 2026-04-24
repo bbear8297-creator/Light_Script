@@ -1,5 +1,5 @@
 --[[
-    精美自适应通用 UI 库 (乳白不透明主题，圆角设计，层次微显)
+    精美自适应通用 UI 库 (乳白不透明主题，微分层，圆角设计)
     支持 PC & Mobile，悬浮球唤醒，动态模块创建
 ]]
 
@@ -58,16 +58,6 @@ local function AddCorner(parent, radius)
     return corner
 end
 
--- 为元素添加极浅描边
-local function AddSubtleStroke(parent)
-    local stroke = Instance.new("UIStroke")
-    stroke.Color = Color3.fromRGB(210, 210, 210)
-    stroke.Thickness = 1
-    stroke.Transparency = 0.6
-    stroke.Parent = parent
-    return stroke
-end
-
 -- 库初始化
 function Library:CreateWindow(options)
     local WindowTitle = options.Title or "My Executor UI"
@@ -102,7 +92,7 @@ function Library:CreateWindow(options)
     MainFrame.AnchorPoint = Vector2.new(0.5, 0.5)
     MainFrame.Position = UDim2.new(0.5, 0, 0.5, 0)
     MainFrame.Size = UDim2.new(0.9, 0, 0.85, 0)
-    MainFrame.BackgroundColor3 = Color3.fromRGB(245, 245, 245)
+    MainFrame.BackgroundColor3 = Color3.fromRGB(245, 245, 245) -- 主背景
     MainFrame.BorderSizePixel = 0
     MainFrame.ClipsDescendants = true
     MainFrame.Parent = ScreenGui
@@ -120,11 +110,11 @@ function Library:CreateWindow(options)
     SizeConstraint.MinSize = Vector2.new(300, 250)
     SizeConstraint.Parent = MainFrame
 
-    -- 顶部栏 (乳白，单独处理圆角)
+    -- 顶部栏 (微亮区分)
     local TopBar = Instance.new("Frame")
     TopBar.Name = "TopBar"
     TopBar.Size = UDim2.new(1, 0, 0, 40)
-    TopBar.BackgroundColor3 = Color3.fromRGB(245, 245, 245)
+    TopBar.BackgroundColor3 = Color3.fromRGB(250, 250, 250) -- 标题栏更亮
     TopBar.BorderSizePixel = 0
     TopBar.Parent = MainFrame
 
@@ -135,7 +125,7 @@ function Library:CreateWindow(options)
     local BottomHideFrame = Instance.new("Frame")
     BottomHideFrame.Size = UDim2.new(1, 0, 0.5, 0)
     BottomHideFrame.Position = UDim2.new(0, 0, 0.5, 0)
-    BottomHideFrame.BackgroundColor3 = Color3.fromRGB(245, 245, 245)
+    BottomHideFrame.BackgroundColor3 = Color3.fromRGB(250, 250, 250)
     BottomHideFrame.BorderSizePixel = 0
     BottomHideFrame.Parent = TopBar
 
@@ -150,12 +140,12 @@ function Library:CreateWindow(options)
     TitleLabel.TextXAlignment = Enum.TextXAlignment.Left
     TitleLabel.Parent = TopBar
 
-    -- 侧边栏 (乳白，同样单独处理圆角)
+    -- 侧边栏 (微暗区分)
     local Sidebar = Instance.new("Frame")
     Sidebar.Name = "Sidebar"
     Sidebar.Size = UDim2.new(0, 130, 1, -40)
     Sidebar.Position = UDim2.new(0, 0, 0, 40)
-    Sidebar.BackgroundColor3 = Color3.fromRGB(245, 245, 245)
+    Sidebar.BackgroundColor3 = Color3.fromRGB(238, 238, 238) -- 侧边栏稍暗
     Sidebar.BorderSizePixel = 0
     Sidebar.Parent = MainFrame
 
@@ -166,7 +156,7 @@ function Library:CreateWindow(options)
     local RightHideFrame = Instance.new("Frame")
     RightHideFrame.Size = UDim2.new(0.5, 0, 1, 0)
     RightHideFrame.Position = UDim2.new(0.5, 0, 0, 0)
-    RightHideFrame.BackgroundColor3 = Color3.fromRGB(245, 245, 245)
+    RightHideFrame.BackgroundColor3 = Color3.fromRGB(238, 238, 238)
     RightHideFrame.BorderSizePixel = 0
     RightHideFrame.Parent = Sidebar
 
@@ -207,7 +197,7 @@ function Library:CreateWindow(options)
         local TabButton = Instance.new("TextButton")
         TabButton.Name = TabName
         TabButton.Size = UDim2.new(0.9, 0, 0, 30)
-        TabButton.BackgroundColor3 = Color3.fromRGB(235, 235, 235) -- 微深
+        TabButton.BackgroundColor3 = Color3.fromRGB(228, 228, 228) -- 按钮底色
         TabButton.Text = TabName
         TabButton.TextColor3 = Color3.fromRGB(50, 50, 50)
         TabButton.Font = Enum.Font.GothamSemibold
@@ -253,7 +243,7 @@ function Library:CreateWindow(options)
                 else
                     tabData.Page.Visible = false
                     TweenService:Create(tabData.Button, TweenInfo.new(0.2), {
-                        BackgroundColor3 = Color3.fromRGB(235, 235, 235),
+                        BackgroundColor3 = Color3.fromRGB(228, 228, 228),
                         TextColor3 = Color3.fromRGB(50, 50, 50)
                     }):Play()
                 end
@@ -262,13 +252,15 @@ function Library:CreateWindow(options)
 
         local Elements = {}
 
+        -- 控件模板背景色(统一微暗，形成层次对比)
+        local ELEMENT_BG = Color3.fromRGB(242, 242, 242)
+
         function Elements:CreateLabel(text)
             local LabelFrame = Instance.new("Frame")
             LabelFrame.Size = UDim2.new(1, 0, 0, 30)
-            LabelFrame.BackgroundColor3 = Color3.fromRGB(240, 240, 240) -- 比页面背景稍暗
+            LabelFrame.BackgroundColor3 = ELEMENT_BG
             LabelFrame.Parent = TabPage
             AddCorner(LabelFrame, 8)
-            AddSubtleStroke(LabelFrame)
 
             local Label = Instance.new("TextLabel")
             Label.Size = UDim2.new(1, -20, 1, 0)
@@ -285,14 +277,13 @@ function Library:CreateWindow(options)
         function Elements:CreateButton(text, callback)
             local Button = Instance.new("TextButton")
             Button.Size = UDim2.new(1, 0, 0, 35)
-            Button.BackgroundColor3 = Color3.fromRGB(240, 240, 240)
+            Button.BackgroundColor3 = ELEMENT_BG
             Button.Text = text
             Button.TextColor3 = Color3.fromRGB(30, 30, 30)
             Button.Font = Enum.Font.GothamSemibold
             Button.TextSize = 14
             Button.Parent = TabPage
             AddCorner(Button, 8)
-            AddSubtleStroke(Button)
 
             Button.MouseEnter:Connect(function()
                 TweenService:Create(Button, TweenInfo.new(0.2), {
@@ -302,7 +293,7 @@ function Library:CreateWindow(options)
             end)
             Button.MouseLeave:Connect(function()
                 TweenService:Create(Button, TweenInfo.new(0.2), {
-                    BackgroundColor3 = Color3.fromRGB(240, 240, 240),
+                    BackgroundColor3 = ELEMENT_BG,
                     TextColor3 = Color3.fromRGB(30, 30, 30)
                 }):Play()
             end)
@@ -316,10 +307,9 @@ function Library:CreateWindow(options)
             local toggled = default or false
             local ToggleFrame = Instance.new("Frame")
             ToggleFrame.Size = UDim2.new(1, 0, 0, 35)
-            ToggleFrame.BackgroundColor3 = Color3.fromRGB(240, 240, 240)
+            ToggleFrame.BackgroundColor3 = ELEMENT_BG
             ToggleFrame.Parent = TabPage
             AddCorner(ToggleFrame, 8)
-            AddSubtleStroke(ToggleFrame)
 
             local ToggleLabel = Instance.new("TextLabel")
             ToggleLabel.Size = UDim2.new(1, -60, 1, 0)
@@ -363,10 +353,9 @@ function Library:CreateWindow(options)
         function Elements:CreateSlider(text, min, max, default, callback)
             local SliderFrame = Instance.new("Frame")
             SliderFrame.Size = UDim2.new(1, 0, 0, 50)
-            SliderFrame.BackgroundColor3 = Color3.fromRGB(240, 240, 240)
+            SliderFrame.BackgroundColor3 = ELEMENT_BG
             SliderFrame.Parent = TabPage
             AddCorner(SliderFrame, 8)
-            AddSubtleStroke(SliderFrame)
 
             local SliderLabel = Instance.new("TextLabel")
             SliderLabel.Size = UDim2.new(1, -20, 0, 25)
