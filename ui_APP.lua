@@ -1,13 +1,15 @@
 --[[
-    精美自适应通用 UI 库 (乳白主题，标题/导航/内容区分，圆角设计)
+    精美自适应通用 UI 库 v2.0
+    乳白主题 · 三层分区 · 圆角设计
     支持 PC & Mobile，悬浮球唤醒，动态模块创建
-    新增 CreateInfoPanel 复合信息控件
+    新增：CreateInfoPanel（含头像/游戏名/玩家数/注入器）、Destroy方法
 ]]
 
 local UserInputService = game:GetService("UserInputService")
 local TweenService = game:GetService("TweenService")
 local CoreGui = game:GetService("CoreGui")
 local Players = game:GetService("Players")
+local MarketplaceService = game:GetService("MarketplaceService")
 
 local Library = {}
 
@@ -71,7 +73,7 @@ function Library:CreateWindow(options)
     ScreenGui.ZIndexBehavior = Enum.ZIndexBehavior.Sibling
     ScreenGui.Parent = targetGui
 
-    -- 悬浮球
+    -- 悬浮球 (乳白不透明)
     local FloatingBall = Instance.new("TextButton")
     FloatingBall.Name = "FloatingBall"
     FloatingBall.Size = UDim2.new(0, 50, 0, 50)
@@ -205,6 +207,13 @@ function Library:CreateWindow(options)
     local Window = {}
     local Tabs = {}
     local FirstTab = true
+
+    -- ★ 销毁UI方法
+    function Window:Destroy()
+        if ScreenGui then
+            ScreenGui:Destroy()
+        end
+    end
 
     function Window:CreateTab(TabName)
         local TabButton = Instance.new("TextButton")
@@ -430,7 +439,7 @@ function Library:CreateWindow(options)
             end)
         end
 
-        -- ★ 新增复合信息面板 ★
+        -- ★ 复合信息面板
         function Elements:CreateInfoPanel(info)
             local panel = Instance.new("Frame")
             panel.Size = UDim2.new(1, 0, 0, 80)
@@ -443,11 +452,20 @@ function Library:CreateWindow(options)
             avatar.Size = UDim2.new(0, 55, 0, 55)
             avatar.Position = UDim2.new(0, 12, 0.5, -27)
             avatar.BackgroundColor3 = Color3.fromRGB(200, 200, 200)
-            avatar.Image = "rbxasset://textures/ui/GuiImagePlaceholder.png" -- 占位头像
+            avatar.Image = "rbxasset://textures/ui/GuiImagePlaceholder.png"
             avatar.Parent = panel
-            AddCorner(avatar, 27) -- 圆形
+            AddCorner(avatar, 27)
 
-            -- 文本信息区 (右侧)
+            -- 尝试加载真实头像
+            spawn(function()
+                pcall(function()
+                    local userId = Players.LocalPlayer.UserId
+                    local content = Players:GetUserThumbnailAsync(userId, Enum.ThumbnailType.HeadShot, Enum.ThumbnailSize.Size150x150)
+                    avatar.Image = content
+                end)
+            end)
+
+            -- 右侧信息区
             local infoFrame = Instance.new("Frame")
             infoFrame.Size = UDim2.new(1, -80, 1, -10)
             infoFrame.Position = UDim2.new(0, 75, 0, 5)
@@ -469,11 +487,11 @@ function Library:CreateWindow(options)
             nameLabel.TextXAlignment = Enum.TextXAlignment.Left
             nameLabel.Parent = infoFrame
 
-            -- 服务器信息
+            -- 服务器/游戏信息
             local serverLabel = Instance.new("TextLabel")
             serverLabel.Size = UDim2.new(1, 0, 0, 18)
             serverLabel.BackgroundTransparency = 1
-            serverLabel.Text = info.ServerInfo or "服务器: 未知"
+            serverLabel.Text = info.ServerInfo or "服务器信息: 未知"
             serverLabel.TextColor3 = Color3.fromRGB(60, 60, 60)
             serverLabel.Font = Enum.Font.Gotham
             serverLabel.TextSize = 13
@@ -490,15 +508,6 @@ function Library:CreateWindow(options)
             execLabel.TextSize = 13
             execLabel.TextXAlignment = Enum.TextXAlignment.Left
             execLabel.Parent = infoFrame
-
-            -- 尝试加载真实头像（失败则保留占位图）
-            pcall(function()
-                local userId = Players.LocalPlayer.UserId
-                local thumbType = Enum.ThumbnailType.HeadShot
-                local thumbSize = Enum.ThumbnailSize.Size150x150
-                local content, isReady = Players:GetUserThumbnailAsync(userId, thumbType, thumbSize)
-                avatar.Image = content
-            end)
 
             return panel
         end
