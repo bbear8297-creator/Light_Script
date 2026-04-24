@@ -1,18 +1,20 @@
 --[[
     精美自适应通用 UI 库 (乳白主题，标题/导航/内容区分，圆角设计)
     支持 PC & Mobile，悬浮球唤醒，动态模块创建
+    新增 CreateInfoPanel 复合信息控件
 ]]
 
 local UserInputService = game:GetService("UserInputService")
 local TweenService = game:GetService("TweenService")
 local CoreGui = game:GetService("CoreGui")
+local Players = game:GetService("Players")
 
 local Library = {}
 
 -- 保护UI容器
 local targetGui = (gethui and gethui()) or CoreGui
 if not targetGui:FindFirstChild("RobloxGui") and not pcall(function() return CoreGui.Name end) then
-    targetGui = game:GetService("Players").LocalPlayer:WaitForChild("PlayerGui")
+    targetGui = Players.LocalPlayer:WaitForChild("PlayerGui")
 end
 
 -- 全局拖拽函数
@@ -69,7 +71,7 @@ function Library:CreateWindow(options)
     ScreenGui.ZIndexBehavior = Enum.ZIndexBehavior.Sibling
     ScreenGui.Parent = targetGui
 
-    -- 悬浮球 (乳白不透明)
+    -- 悬浮球
     local FloatingBall = Instance.new("TextButton")
     FloatingBall.Name = "FloatingBall"
     FloatingBall.Size = UDim2.new(0, 50, 0, 50)
@@ -86,39 +88,36 @@ function Library:CreateWindow(options)
     UIStrokeBall.Color = AccentColor
     UIStrokeBall.Thickness = 2
 
-    -- 主UI框架 (乳白，圆角)
+    -- 主UI框架
     local MainFrame = Instance.new("Frame")
     MainFrame.Name = "MainFrame"
     MainFrame.AnchorPoint = Vector2.new(0.5, 0.5)
     MainFrame.Position = UDim2.new(0.5, 0, 0.5, 0)
     MainFrame.Size = UDim2.new(0.9, 0, 0.85, 0)
-    MainFrame.BackgroundColor3 = Color3.fromRGB(248, 248, 248) -- 主背景微调
+    MainFrame.BackgroundColor3 = Color3.fromRGB(248, 248, 248)
     MainFrame.BorderSizePixel = 0
     MainFrame.ClipsDescendants = true
     MainFrame.Parent = ScreenGui
     AddCorner(MainFrame, 16)
 
-    -- 主窗口外描边
     local MainStroke = Instance.new("UIStroke", MainFrame)
     MainStroke.Color = AccentColor
     MainStroke.Thickness = 1.5
     MainStroke.Transparency = 0.4
 
-    -- 尺寸限制
     local SizeConstraint = Instance.new("UISizeConstraint")
     SizeConstraint.MaxSize = Vector2.new(650, 400)
     SizeConstraint.MinSize = Vector2.new(300, 250)
     SizeConstraint.Parent = MainFrame
 
-    -- 顶部栏 (标题栏，最亮)
+    -- 顶部栏
     local TopBar = Instance.new("Frame")
     TopBar.Name = "TopBar"
     TopBar.Size = UDim2.new(1, 0, 0, 40)
-    TopBar.BackgroundColor3 = Color3.fromRGB(252, 252, 252) -- 标题更亮
+    TopBar.BackgroundColor3 = Color3.fromRGB(252, 252, 252)
     TopBar.BorderSizePixel = 0
     TopBar.Parent = MainFrame
 
-    -- 顶部圆角处理
     local TopBarCorner = Instance.new("UICorner")
     TopBarCorner.CornerRadius = UDim.new(0, 16)
     TopBarCorner.Parent = TopBar
@@ -130,7 +129,6 @@ function Library:CreateWindow(options)
     BottomHideFrame.BorderSizePixel = 0
     BottomHideFrame.Parent = TopBar
 
-    -- 标题栏底部分隔线
     local TopDivider = Instance.new("Frame")
     TopDivider.Size = UDim2.new(1, 0, 0, 1)
     TopDivider.Position = UDim2.new(0, 0, 1, -1)
@@ -149,16 +147,15 @@ function Library:CreateWindow(options)
     TitleLabel.TextXAlignment = Enum.TextXAlignment.Left
     TitleLabel.Parent = TopBar
 
-    -- 侧边栏 (导航，略暗)
+    -- 侧边栏
     local Sidebar = Instance.new("Frame")
     Sidebar.Name = "Sidebar"
     Sidebar.Size = UDim2.new(0, 130, 1, -40)
     Sidebar.Position = UDim2.new(0, 0, 0, 40)
-    Sidebar.BackgroundColor3 = Color3.fromRGB(240, 240, 240) -- 导航区稍暗
+    Sidebar.BackgroundColor3 = Color3.fromRGB(240, 240, 240)
     Sidebar.BorderSizePixel = 0
     Sidebar.Parent = MainFrame
 
-    -- 侧边栏圆角处理
     local SidebarCorner = Instance.new("UICorner")
     SidebarCorner.CornerRadius = UDim.new(0, 16)
     SidebarCorner.Parent = Sidebar
@@ -170,7 +167,6 @@ function Library:CreateWindow(options)
     RightHideFrame.BorderSizePixel = 0
     RightHideFrame.Parent = Sidebar
 
-    -- 侧边栏右侧分隔线
     local SideDivider = Instance.new("Frame")
     SideDivider.Size = UDim2.new(0, 1, 1, 0)
     SideDivider.Position = UDim2.new(1, -1, 0, 0)
@@ -199,7 +195,6 @@ function Library:CreateWindow(options)
     ContentContainer.BackgroundTransparency = 1
     ContentContainer.Parent = MainFrame
 
-    -- 拖拽
     MakeDraggable(TopBar, MainFrame)
     MakeDraggable(FloatingBall, FloatingBall)
 
@@ -269,8 +264,6 @@ function Library:CreateWindow(options)
         end)
 
         local Elements = {}
-
-        -- 控件背景色 (介于主背景与内容区之间)
         local ELEMENT_BG = Color3.fromRGB(245, 245, 245)
 
         function Elements:CreateLabel(text)
@@ -435,6 +428,79 @@ function Library:CreateWindow(options)
                     updateSlider(input)
                 end
             end)
+        end
+
+        -- ★ 新增复合信息面板 ★
+        function Elements:CreateInfoPanel(info)
+            local panel = Instance.new("Frame")
+            panel.Size = UDim2.new(1, 0, 0, 80)
+            panel.BackgroundColor3 = ELEMENT_BG
+            panel.Parent = TabPage
+            AddCorner(panel, 10)
+
+            -- 左侧头像
+            local avatar = Instance.new("ImageLabel")
+            avatar.Size = UDim2.new(0, 55, 0, 55)
+            avatar.Position = UDim2.new(0, 12, 0.5, -27)
+            avatar.BackgroundColor3 = Color3.fromRGB(200, 200, 200)
+            avatar.Image = "rbxasset://textures/ui/GuiImagePlaceholder.png" -- 占位头像
+            avatar.Parent = panel
+            AddCorner(avatar, 27) -- 圆形
+
+            -- 文本信息区 (右侧)
+            local infoFrame = Instance.new("Frame")
+            infoFrame.Size = UDim2.new(1, -80, 1, -10)
+            infoFrame.Position = UDim2.new(0, 75, 0, 5)
+            infoFrame.BackgroundTransparency = 1
+            infoFrame.Parent = panel
+
+            local layout = Instance.new("UIListLayout")
+            layout.Padding = UDim.new(0, 2)
+            layout.Parent = infoFrame
+
+            -- 玩家名
+            local nameLabel = Instance.new("TextLabel")
+            nameLabel.Size = UDim2.new(1, 0, 0, 20)
+            nameLabel.BackgroundTransparency = 1
+            nameLabel.Text = info.PlayerName or Players.LocalPlayer.Name
+            nameLabel.TextColor3 = Color3.fromRGB(40, 40, 40)
+            nameLabel.Font = Enum.Font.GothamBold
+            nameLabel.TextSize = 15
+            nameLabel.TextXAlignment = Enum.TextXAlignment.Left
+            nameLabel.Parent = infoFrame
+
+            -- 服务器信息
+            local serverLabel = Instance.new("TextLabel")
+            serverLabel.Size = UDim2.new(1, 0, 0, 18)
+            serverLabel.BackgroundTransparency = 1
+            serverLabel.Text = info.ServerInfo or "服务器: 未知"
+            serverLabel.TextColor3 = Color3.fromRGB(60, 60, 60)
+            serverLabel.Font = Enum.Font.Gotham
+            serverLabel.TextSize = 13
+            serverLabel.TextXAlignment = Enum.TextXAlignment.Left
+            serverLabel.Parent = infoFrame
+
+            -- 注入器信息
+            local execLabel = Instance.new("TextLabel")
+            execLabel.Size = UDim2.new(1, 0, 0, 18)
+            execLabel.BackgroundTransparency = 1
+            execLabel.Text = info.ExecutorInfo or "注入器: 未知"
+            execLabel.TextColor3 = Color3.fromRGB(60, 60, 60)
+            execLabel.Font = Enum.Font.Gotham
+            execLabel.TextSize = 13
+            execLabel.TextXAlignment = Enum.TextXAlignment.Left
+            execLabel.Parent = infoFrame
+
+            -- 尝试加载真实头像（失败则保留占位图）
+            pcall(function()
+                local userId = Players.LocalPlayer.UserId
+                local thumbType = Enum.ThumbnailType.HeadShot
+                local thumbSize = Enum.ThumbnailSize.Size150x150
+                local content, isReady = Players:GetUserThumbnailAsync(userId, thumbType, thumbSize)
+                avatar.Image = content
+            end)
+
+            return panel
         end
 
         return Elements
