@@ -1,8 +1,6 @@
 --[[
-    精美自适应通用 UI 库 v2.0
-    乳白主题 · 三层分区 · 圆角设计
-    支持 PC & Mobile，悬浮球唤醒，动态模块创建
-    新增：CreateInfoPanel（含头像/游戏名/玩家数/注入器）、Destroy方法
+    精美自适应通用 UI 库 v2.1
+    新增：下拉菜单、通知系统、动态改色、按钮文本左对齐
 ]]
 
 local UserInputService = game:GetService("UserInputService")
@@ -67,13 +65,42 @@ function Library:CreateWindow(options)
     local WindowTitle = options.Title or "My Executor UI"
     local AccentColor = options.Color or Color3.fromRGB(85, 170, 255)
 
+    -- 颜色表，用于动态更新
+    local accentColorTable = { Current = AccentColor }
+
     local ScreenGui = Instance.new("ScreenGui")
     ScreenGui.Name = "UniversalExecutorUI"
     ScreenGui.ResetOnSpawn = false
     ScreenGui.ZIndexBehavior = Enum.ZIndexBehavior.Sibling
     ScreenGui.Parent = targetGui
 
-    -- 悬浮球 (乳白不透明)
+    -- ========== 右上角通知容器 ==========
+    local NotificationContainer = Instance.new("Frame")
+    NotificationContainer.Name = "NotificationContainer"
+    NotificationContainer.AnchorPoint = Vector2.new(1, 0)
+    NotificationContainer.Position = UDim2.new(1, -10, 0, 50)
+    NotificationContainer.Size = UDim2.new(0, 250, 1, -60)
+    NotificationContainer.BackgroundTransparency = 1
+    NotificationContainer.ClipsDescendants = false
+    NotificationContainer.ZIndex = 10
+    NotificationContainer.Parent = ScreenGui
+
+    -- ========== 下拉菜单全局列表 ==========
+    local DropdownList = Instance.new("Frame")
+    DropdownList.Name = "DropdownList"
+    DropdownList.Size = UDim2.new(0, 200, 0, 0)
+    DropdownList.BackgroundColor3 = Color3.fromRGB(245, 245, 245)
+    DropdownList.BorderSizePixel = 0
+    DropdownList.Visible = false
+    DropdownList.ZIndex = 10
+    DropdownList.Parent = ScreenGui
+    AddCorner(DropdownList, 8)
+
+    local DropdownListLayout = Instance.new("UIListLayout")
+    DropdownListLayout.SortOrder = Enum.SortOrder.LayoutOrder
+    DropdownListLayout.Parent = DropdownList
+
+    -- 悬浮球
     local FloatingBall = Instance.new("TextButton")
     FloatingBall.Name = "FloatingBall"
     FloatingBall.Size = UDim2.new(0, 50, 0, 50)
@@ -85,9 +112,9 @@ function Library:CreateWindow(options)
     FloatingBall.TextSize = 18
     FloatingBall.Parent = ScreenGui
     AddCorner(FloatingBall, 25)
-    
+
     local UIStrokeBall = Instance.new("UIStroke", FloatingBall)
-    UIStrokeBall.Color = AccentColor
+    UIStrokeBall.Color = accentColorTable.Current
     UIStrokeBall.Thickness = 2
 
     -- 主UI框架
@@ -103,7 +130,7 @@ function Library:CreateWindow(options)
     AddCorner(MainFrame, 16)
 
     local MainStroke = Instance.new("UIStroke", MainFrame)
-    MainStroke.Color = AccentColor
+    MainStroke.Color = accentColorTable.Current
     MainStroke.Thickness = 1.5
     MainStroke.Transparency = 0.4
 
@@ -207,14 +234,101 @@ function Library:CreateWindow(options)
     local Window = {}
     local Tabs = {}
     local FirstTab = true
+    local selectedTabButton = nil
+    local currentDropdown = nil
+    local dropdownCloseConn = nil
 
-    -- ★ 销毁UI方法
-    function Window:Destroy()
-        if ScreenGui then
-            ScreenGui:Destroy()
+    -- 颜色更新函数列表
+    local updateFunctions = {}
+
+    -- ========== 动态改色API ==========
+    function Window:SetAccentColor(newColor)
+        accentColorTable.Current = newColor
+        for _, func in ipairs(updateFunctions) do
+            func(newColor)
         end
     end
 
+    -- 添加更新函数
+    table.insert(updateFunctions, function(c) UIStrokeBall.Color = c end)
+    table.insert(updateFunctions, function(c) MainStroke.Color = c end)
+
+    -- ========== 通知系统 ==========
+    local currentNotification = nil
+    function Window:Notify(title, message, duration)
+        title = title or "通知"
+        message = message or ""
+        duration = duration or 4
+
+        -- 如果已有通知，直接移除
+        if currentNotification then
+            currentNotification:Destroy()
+            currentNotification = nil
+        end
+
+        local notifFrame = Instance.new("Frame")
+        notifFrame.BackgroundColor3 = Color3.fromRGB(245, 245, 245)
+        notifFrame.Size = UDim2.new(0, 240, 0, 60)
+        notifFrame.Position = UDim2.new(1, 10, 0, 0) -- 从右侧滑入
+        notifFrame.Parent = NotificationContainer
+        AddCorner(notifFrame, 8)
+        local stroke = Instance.new("UIStroke", notifFrame)
+        stroke.Color = Color3.fromRGB(200, 200, 200)
+        stroke.Thickness = 1
+
+        local titleLabel = Instance.new("TextLabel")
+        titleLabel.Size = UDim2.new(1, -16, 0, 20)
+        titleLabel.Position = UDim2.new(0, 8, 0, 6)
+        titleLabel.BackgroundTransparency = 1
+        titleLabel.Text = title
+        titleLabel.TextColor3 = Color3.fromRGB(30, 30, 30)
+        titleLabel.Font = Enum.Font.GothamBold
+        titleLabel.TextSize = 14
+        titleLabel.TextXAlignment = Enum.TextXAlignment.Left
+        titleLabel.Parent = notifFrame
+
+        local msgLabel = Instance.new("TextLabel")
+        msgLabel.Size = UDim2.new(1, -16, 0, 20)
+        msgLabel.Position = UDim2.new(0, 8, 0, 28)
+        msgLabel.BackgroundTransparency = 1
+        msgLabel.Text = message
+        msgLabel.TextColor3 = Color3.fromRGB(80, 80, 80)
+        msgLabel.Font = Enum.Font.Gotham
+        msgLabel.TextSize = 13
+        msgLabel.TextXAlignment = Enum.TextXAlignment.Left
+        msgLabel.TextWrapped = true
+        msgLabel.Parent = notifFrame
+
+        -- 入场滑入动画
+        notifFrame:TweenPosition(UDim2.new(1, -250, 0, 0), "Out", "Quad", 0.3)
+        currentNotification = notifFrame
+
+        -- 自动消失
+        delay(duration, function()
+            if notifFrame and notifFrame.Parent then
+                notifFrame:TweenPosition(UDim2.new(1, 10, 0, 0), "In", "Quad", 0.3)
+                wait(0.3)
+                if currentNotification == notifFrame then
+                    currentNotification = nil
+                end
+                notifFrame:Destroy()
+            end
+        end)
+    end
+
+    -- ========== 关闭下拉菜单的辅助函数 ==========
+    local function closeDropdown()
+        if DropdownList.Visible then
+            DropdownList.Visible = false
+            if dropdownCloseConn then
+                dropdownCloseConn:Disconnect()
+                dropdownCloseConn = nil
+            end
+            currentDropdown = nil
+        end
+    end
+
+    -- ========== 标签页创建 ==========
     function Window:CreateTab(TabName)
         local TabButton = Instance.new("TextButton")
         TabButton.Name = TabName
@@ -233,7 +347,7 @@ function Library:CreateWindow(options)
         TabPage.Position = UDim2.new(0, 10, 0, 10)
         TabPage.BackgroundTransparency = 1
         TabPage.ScrollBarThickness = 3
-        TabPage.ScrollBarImageColor3 = AccentColor
+        TabPage.ScrollBarImageColor3 = accentColorTable.Current
         TabPage.Visible = FirstTab
         TabPage.Parent = ContentContainer
 
@@ -247,8 +361,14 @@ function Library:CreateWindow(options)
         end)
 
         if FirstTab then
-            TabButton.BackgroundColor3 = AccentColor
+            TabButton.BackgroundColor3 = accentColorTable.Current
             TabButton.TextColor3 = Color3.fromRGB(255, 255, 255)
+            selectedTabButton = TabButton
+            table.insert(updateFunctions, function(c)
+                if selectedTabButton == TabButton then
+                    selectedTabButton.BackgroundColor3 = c
+                end
+            end)
             FirstTab = false
         end
 
@@ -258,8 +378,9 @@ function Library:CreateWindow(options)
             for _, tabData in pairs(Tabs) do
                 if tabData.Button == TabButton then
                     tabData.Page.Visible = true
+                    selectedTabButton = TabButton
                     TweenService:Create(tabData.Button, TweenInfo.new(0.2), {
-                        BackgroundColor3 = AccentColor,
+                        BackgroundColor3 = accentColorTable.Current,
                         TextColor3 = Color3.fromRGB(255, 255, 255)
                     }):Play()
                 else
@@ -275,6 +396,7 @@ function Library:CreateWindow(options)
         local Elements = {}
         local ELEMENT_BG = Color3.fromRGB(245, 245, 245)
 
+        -- 标签
         function Elements:CreateLabel(text)
             local LabelFrame = Instance.new("Frame")
             LabelFrame.Size = UDim2.new(1, 0, 0, 30)
@@ -294,6 +416,7 @@ function Library:CreateWindow(options)
             Label.Parent = LabelFrame
         end
 
+        -- 按钮（文本左对齐）
         function Elements:CreateButton(text, callback)
             local Button = Instance.new("TextButton")
             Button.Size = UDim2.new(1, 0, 0, 35)
@@ -302,12 +425,18 @@ function Library:CreateWindow(options)
             Button.TextColor3 = Color3.fromRGB(30, 30, 30)
             Button.Font = Enum.Font.GothamSemibold
             Button.TextSize = 14
+            Button.TextXAlignment = Enum.TextXAlignment.Left
             Button.Parent = TabPage
             AddCorner(Button, 8)
 
+            -- 文本左对齐留出边距
+            local padding = Instance.new("UIPadding")
+            padding.PaddingLeft = UDim.new(0, 10)
+            padding.Parent = Button
+
             Button.MouseEnter:Connect(function()
                 TweenService:Create(Button, TweenInfo.new(0.2), {
-                    BackgroundColor3 = AccentColor,
+                    BackgroundColor3 = accentColorTable.Current,
                     TextColor3 = Color3.fromRGB(255, 255, 255)
                 }):Play()
             end)
@@ -323,6 +452,7 @@ function Library:CreateWindow(options)
             end)
         end
 
+        -- 开关
         function Elements:CreateToggle(text, default, callback)
             local toggled = default or false
             local ToggleFrame = Instance.new("Frame")
@@ -345,7 +475,7 @@ function Library:CreateWindow(options)
             local ToggleBtn = Instance.new("TextButton")
             ToggleBtn.Size = UDim2.new(0, 40, 0, 20)
             ToggleBtn.Position = UDim2.new(1, -50, 0.5, -10)
-            ToggleBtn.BackgroundColor3 = toggled and AccentColor or Color3.fromRGB(180, 180, 180)
+            ToggleBtn.BackgroundColor3 = toggled and accentColorTable.Current or Color3.fromRGB(180, 180, 180)
             ToggleBtn.Text = ""
             ToggleBtn.Parent = ToggleFrame
             AddCorner(ToggleBtn, 10)
@@ -357,11 +487,17 @@ function Library:CreateWindow(options)
             Indicator.Parent = ToggleBtn
             AddCorner(Indicator, 8)
 
+            -- 动态颜色更新函数
+            local function updateToggleColor(newColor)
+                ToggleBtn.BackgroundColor3 = toggled and newColor or Color3.fromRGB(180, 180, 180)
+            end
+            table.insert(updateFunctions, updateToggleColor)
+
             local function FireToggle()
                 toggled = not toggled
-                local goalColor = toggled and AccentColor or Color3.fromRGB(180, 180, 180)
+                local goalColor = toggled and accentColorTable.Current or Color3.fromRGB(180, 180, 180)
                 local goalPos = toggled and UDim2.new(1, -18, 0.5, -8) or UDim2.new(0, 2, 0.5, -8)
-                
+
                 TweenService:Create(ToggleBtn, TweenInfo.new(0.2), {BackgroundColor3 = goalColor}):Play()
                 TweenService:Create(Indicator, TweenInfo.new(0.2), {Position = goalPos}):Play()
                 pcall(callback, toggled)
@@ -370,6 +506,7 @@ function Library:CreateWindow(options)
             ToggleBtn.MouseButton1Click:Connect(FireToggle)
         end
 
+        -- 滑块
         function Elements:CreateSlider(text, min, max, default, callback)
             local SliderFrame = Instance.new("Frame")
             SliderFrame.Size = UDim2.new(1, 0, 0, 50)
@@ -398,9 +535,12 @@ function Library:CreateWindow(options)
             local BarFill = Instance.new("Frame")
             local defaultScale = (default - min) / (max - min)
             BarFill.Size = UDim2.new(defaultScale, 0, 1, 0)
-            BarFill.BackgroundColor3 = AccentColor
+            BarFill.BackgroundColor3 = accentColorTable.Current
             BarFill.Parent = BarBackground
             AddCorner(BarFill, 4)
+
+            -- 颜色更新
+            table.insert(updateFunctions, function(c) BarFill.BackgroundColor3 = c end)
 
             local SliderButton = Instance.new("TextButton")
             SliderButton.Size = UDim2.new(1, 0, 1, 0)
@@ -413,7 +553,7 @@ function Library:CreateWindow(options)
                 local pos = math.clamp(input.Position.X - BarBackground.AbsolutePosition.X, 0, BarBackground.AbsoluteSize.X)
                 local scale = pos / BarBackground.AbsoluteSize.X
                 local value = math.floor(min + ((max - min) * scale))
-                
+
                 TweenService:Create(BarFill, TweenInfo.new(0.1), {Size = UDim2.new(scale, 0, 1, 0)}):Play()
                 SliderLabel.Text = text .. " : " .. tostring(value)
                 pcall(callback, value)
@@ -512,7 +652,127 @@ function Library:CreateWindow(options)
             return panel
         end
 
+        -- ★ 下拉菜单
+        function Elements:CreateDropdown(text, options, default, callback)
+            if type(options) ~= "table" or #options == 0 then return end
+            local selected = default or options[1]
+            local DropdownFrame = Instance.new("Frame")
+            DropdownFrame.Size = UDim2.new(1, 0, 0, 35)
+            DropdownFrame.BackgroundColor3 = ELEMENT_BG
+            DropdownFrame.Parent = TabPage
+            AddCorner(DropdownFrame, 8)
+
+            -- 左侧标签
+            local DropdownLabel = Instance.new("TextLabel")
+            DropdownLabel.Size = UDim2.new(0.5, -10, 1, 0)
+            DropdownLabel.Position = UDim2.new(0, 10, 0, 0)
+            DropdownLabel.BackgroundTransparency = 1
+            DropdownLabel.Text = text
+            DropdownLabel.TextColor3 = Color3.fromRGB(40, 40, 40)
+            DropdownLabel.Font = Enum.Font.Gotham
+            DropdownLabel.TextSize = 14
+            DropdownLabel.TextXAlignment = Enum.TextXAlignment.Left
+            DropdownLabel.Parent = DropdownFrame
+
+            -- 右侧选择按钮
+            local DropButton = Instance.new("TextButton")
+            DropButton.Size = UDim2.new(0.45, -20, 0, 28)
+            DropButton.Position = UDim2.new(1, -10, 0.5, -14)
+            DropButton.AnchorPoint = Vector2.new(1, 0.5)
+            DropButton.BackgroundColor3 = Color3.fromRGB(230, 230, 230)
+            DropButton.Text = selected .. "  ▼"
+            DropButton.TextColor3 = Color3.fromRGB(30, 30, 30)
+            DropButton.Font = Enum.Font.GothamSemibold
+            DropButton.TextSize = 13
+            DropButton.Parent = DropdownFrame
+            AddCorner(DropButton, 6)
+
+            -- 点击事件
+            DropButton.MouseButton1Click:Connect(function()
+                if currentDropdown and currentDropdown.button == DropButton then
+                    closeDropdown()
+                    return
+                end
+
+                closeDropdown() -- 先关闭其他已打开的
+
+                -- 清空旧选项
+                for _, child in ipairs(DropdownList:GetChildren()) do
+                    if child:IsA("TextButton") then child:Destroy() end
+                end
+
+                -- 填充新选项
+                for _, opt in ipairs(options) do
+                    local optBtn = Instance.new("TextButton")
+                    optBtn.Name = opt
+                    optBtn.Size = UDim2.new(1, 0, 0, 28)
+                    optBtn.BackgroundColor3 = (opt == selected) and accentColorTable.Current or Color3.fromRGB(245, 245, 245)
+                    optBtn.TextColor3 = (opt == selected) and Color3.fromRGB(255, 255, 255) or Color3.fromRGB(40, 40, 40)
+                    optBtn.Text = opt
+                    optBtn.Font = Enum.Font.Gotham
+                    optBtn.TextSize = 13
+                    optBtn.Parent = DropdownList
+                    AddCorner(optBtn, 4)
+
+                    optBtn.MouseButton1Click:Connect(function()
+                        selected = opt
+                        DropButton.Text = selected .. "  ▼"
+                        pcall(callback, selected)
+                        closeDropdown()
+                    end)
+
+                    optBtn.MouseEnter:Connect(function()
+                        TweenService:Create(optBtn, TweenInfo.new(0.2), {
+                            BackgroundColor3 = accentColorTable.Current,
+                            TextColor3 = Color3.fromRGB(255, 255, 255)
+                        }):Play()
+                    end)
+                    optBtn.MouseLeave:Connect(function()
+                        TweenService:Create(optBtn, TweenInfo.new(0.2), {
+                            BackgroundColor3 = (opt == selected) and accentColorTable.Current or Color3.fromRGB(245, 245, 245),
+                            TextColor3 = (opt == selected) and Color3.fromRGB(255, 255, 255) or Color3.fromRGB(40, 40, 40)
+                        }):Play()
+                    end)
+                end
+
+                -- 计算列表位置（相对于屏幕）
+                local absPos = DropButton.AbsolutePosition
+                local absSize = DropButton.AbsoluteSize
+                DropdownList.Position = UDim2.new(0, absPos.X, 0, absPos.Y + absSize.Y + 2)
+                DropdownList.Size = UDim2.new(0, math.max(absSize.X, 200), 0, #options * 28)
+                DropdownList.Visible = true
+
+                currentDropdown = {button = DropButton, options = options, selected = selected}
+
+                -- 全局点击关闭
+                if dropdownCloseConn then dropdownCloseConn:Disconnect() end
+                dropdownCloseConn = UserInputService.InputBegan:Connect(function(input)
+                    if input.UserInputType == Enum.UserInputType.MouseButton1 or input.UserInputType == Enum.UserInputType.Touch then
+                        local pos = Vector2.new(input.Position.X, input.Position.Y)
+                        local drpAbsPos = DropdownList.AbsolutePosition
+                        local drpAbsSize = DropdownList.AbsoluteSize
+                        local btnAbsPos = DropButton.AbsolutePosition
+                        local btnAbsSize = DropButton.AbsoluteSize
+                        if pos.X < drpAbsPos.X or pos.X > drpAbsPos.X + drpAbsSize.X or pos.Y < drpAbsPos.Y or pos.Y > drpAbsPos.Y + drpAbsSize.Y then
+                            if pos.X < btnAbsPos.X or pos.X > btnAbsPos.X + btnAbsSize.X or pos.Y < btnAbsPos.Y or pos.Y > btnAbsPos.Y + btnAbsSize.Y then
+                                closeDropdown()
+                            end
+                        end
+                    end
+                end)
+            end)
+
+            return DropdownFrame
+        end
+
         return Elements
+    end
+
+    -- ★ 销毁UI方法
+    function Window:Destroy()
+        if ScreenGui then
+            ScreenGui:Destroy()
+        end
     end
 
     return Window
