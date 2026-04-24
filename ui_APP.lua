@@ -1,5 +1,5 @@
 --[[
-    精美自适应通用 UI 库 (乳白不透明主题，微分层，圆角设计)
+    精美自适应通用 UI 库 (乳白主题，标题/导航/内容区分，圆角设计)
     支持 PC & Mobile，悬浮球唤醒，动态模块创建
 ]]
 
@@ -86,13 +86,13 @@ function Library:CreateWindow(options)
     UIStrokeBall.Color = AccentColor
     UIStrokeBall.Thickness = 2
 
-    -- 主UI框架 (乳白不透明，圆角)
+    -- 主UI框架 (乳白，圆角)
     local MainFrame = Instance.new("Frame")
     MainFrame.Name = "MainFrame"
     MainFrame.AnchorPoint = Vector2.new(0.5, 0.5)
     MainFrame.Position = UDim2.new(0.5, 0, 0.5, 0)
     MainFrame.Size = UDim2.new(0.9, 0, 0.85, 0)
-    MainFrame.BackgroundColor3 = Color3.fromRGB(245, 245, 245) -- 主背景
+    MainFrame.BackgroundColor3 = Color3.fromRGB(248, 248, 248) -- 主背景微调
     MainFrame.BorderSizePixel = 0
     MainFrame.ClipsDescendants = true
     MainFrame.Parent = ScreenGui
@@ -110,14 +110,15 @@ function Library:CreateWindow(options)
     SizeConstraint.MinSize = Vector2.new(300, 250)
     SizeConstraint.Parent = MainFrame
 
-    -- 顶部栏 (微亮区分)
+    -- 顶部栏 (标题栏，最亮)
     local TopBar = Instance.new("Frame")
     TopBar.Name = "TopBar"
     TopBar.Size = UDim2.new(1, 0, 0, 40)
-    TopBar.BackgroundColor3 = Color3.fromRGB(250, 250, 250) -- 标题栏更亮
+    TopBar.BackgroundColor3 = Color3.fromRGB(252, 252, 252) -- 标题更亮
     TopBar.BorderSizePixel = 0
     TopBar.Parent = MainFrame
 
+    -- 顶部圆角处理
     local TopBarCorner = Instance.new("UICorner")
     TopBarCorner.CornerRadius = UDim.new(0, 16)
     TopBarCorner.Parent = TopBar
@@ -125,9 +126,17 @@ function Library:CreateWindow(options)
     local BottomHideFrame = Instance.new("Frame")
     BottomHideFrame.Size = UDim2.new(1, 0, 0.5, 0)
     BottomHideFrame.Position = UDim2.new(0, 0, 0.5, 0)
-    BottomHideFrame.BackgroundColor3 = Color3.fromRGB(250, 250, 250)
+    BottomHideFrame.BackgroundColor3 = Color3.fromRGB(252, 252, 252)
     BottomHideFrame.BorderSizePixel = 0
     BottomHideFrame.Parent = TopBar
+
+    -- 标题栏底部分隔线
+    local TopDivider = Instance.new("Frame")
+    TopDivider.Size = UDim2.new(1, 0, 0, 1)
+    TopDivider.Position = UDim2.new(0, 0, 1, -1)
+    TopDivider.BackgroundColor3 = Color3.fromRGB(220, 220, 220)
+    TopDivider.BorderSizePixel = 0
+    TopDivider.Parent = TopBar
 
     local TitleLabel = Instance.new("TextLabel")
     TitleLabel.Size = UDim2.new(1, -20, 1, 0)
@@ -140,15 +149,16 @@ function Library:CreateWindow(options)
     TitleLabel.TextXAlignment = Enum.TextXAlignment.Left
     TitleLabel.Parent = TopBar
 
-    -- 侧边栏 (微暗区分)
+    -- 侧边栏 (导航，略暗)
     local Sidebar = Instance.new("Frame")
     Sidebar.Name = "Sidebar"
     Sidebar.Size = UDim2.new(0, 130, 1, -40)
     Sidebar.Position = UDim2.new(0, 0, 0, 40)
-    Sidebar.BackgroundColor3 = Color3.fromRGB(238, 238, 238) -- 侧边栏稍暗
+    Sidebar.BackgroundColor3 = Color3.fromRGB(240, 240, 240) -- 导航区稍暗
     Sidebar.BorderSizePixel = 0
     Sidebar.Parent = MainFrame
 
+    -- 侧边栏圆角处理
     local SidebarCorner = Instance.new("UICorner")
     SidebarCorner.CornerRadius = UDim.new(0, 16)
     SidebarCorner.Parent = Sidebar
@@ -156,9 +166,17 @@ function Library:CreateWindow(options)
     local RightHideFrame = Instance.new("Frame")
     RightHideFrame.Size = UDim2.new(0.5, 0, 1, 0)
     RightHideFrame.Position = UDim2.new(0.5, 0, 0, 0)
-    RightHideFrame.BackgroundColor3 = Color3.fromRGB(238, 238, 238)
+    RightHideFrame.BackgroundColor3 = Color3.fromRGB(240, 240, 240)
     RightHideFrame.BorderSizePixel = 0
     RightHideFrame.Parent = Sidebar
+
+    -- 侧边栏右侧分隔线
+    local SideDivider = Instance.new("Frame")
+    SideDivider.Size = UDim2.new(0, 1, 1, 0)
+    SideDivider.Position = UDim2.new(1, -1, 0, 0)
+    SideDivider.BackgroundColor3 = Color3.fromRGB(220, 220, 220)
+    SideDivider.BorderSizePixel = 0
+    SideDivider.Parent = Sidebar
 
     local TabContainer = Instance.new("ScrollingFrame")
     TabContainer.Size = UDim2.new(1, 0, 1, -10)
@@ -197,7 +215,7 @@ function Library:CreateWindow(options)
         local TabButton = Instance.new("TextButton")
         TabButton.Name = TabName
         TabButton.Size = UDim2.new(0.9, 0, 0, 30)
-        TabButton.BackgroundColor3 = Color3.fromRGB(228, 228, 228) -- 按钮底色
+        TabButton.BackgroundColor3 = Color3.fromRGB(230, 230, 230)
         TabButton.Text = TabName
         TabButton.TextColor3 = Color3.fromRGB(50, 50, 50)
         TabButton.Font = Enum.Font.GothamSemibold
@@ -243,7 +261,7 @@ function Library:CreateWindow(options)
                 else
                     tabData.Page.Visible = false
                     TweenService:Create(tabData.Button, TweenInfo.new(0.2), {
-                        BackgroundColor3 = Color3.fromRGB(228, 228, 228),
+                        BackgroundColor3 = Color3.fromRGB(230, 230, 230),
                         TextColor3 = Color3.fromRGB(50, 50, 50)
                     }):Play()
                 end
@@ -252,8 +270,8 @@ function Library:CreateWindow(options)
 
         local Elements = {}
 
-        -- 控件模板背景色(统一微暗，形成层次对比)
-        local ELEMENT_BG = Color3.fromRGB(242, 242, 242)
+        -- 控件背景色 (介于主背景与内容区之间)
+        local ELEMENT_BG = Color3.fromRGB(245, 245, 245)
 
         function Elements:CreateLabel(text)
             local LabelFrame = Instance.new("Frame")
