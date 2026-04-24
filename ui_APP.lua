@@ -1,6 +1,7 @@
 --[[
-    精美自适应通用 UI 库 v2.3
-    修复：下拉定位、穿透；新增主题系统、完整示例
+    精美自适应通用 UI 库 v2.4
+    修复：下拉按钮绝对定位，确保始终在控件内
+    新增：下拉菜单、通知系统、动态主题、按钮左对齐
 ]]
 
 local UserInputService = game:GetService("UserInputService")
@@ -54,7 +55,7 @@ local function AddCorner(parent, radius)
     return corner
 end
 
--- ========== 默认主题 ==========
+-- 默认主题
 local DefaultTheme = {
     Accent = Color3.fromRGB(85, 170, 255),
     MainBackground = Color3.fromRGB(248, 248, 248),
@@ -66,13 +67,12 @@ local DefaultTheme = {
     ElementTextColor = Color3.fromRGB(30, 30, 30),
     ToggleOffColor = Color3.fromRGB(180, 180, 180),
     DividerColor = Color3.fromRGB(220, 220, 220),
-    Gradient = nil -- 可设置 UIGradient
+    Gradient = nil
 }
 
 function Library:CreateWindow(options)
     local WindowTitle = options.Title or "My Executor UI"
     local initialTheme = options.Theme or {}
-    -- 合并主题
     local Theme = {}
     for k, v in pairs(DefaultTheme) do
         Theme[k] = initialTheme[k] or v
@@ -84,10 +84,9 @@ function Library:CreateWindow(options)
     ScreenGui.ZIndexBehavior = Enum.ZIndexBehavior.Sibling
     ScreenGui.Parent = targetGui
 
-    -- ========== 主题更新函数列表 ==========
     local themeUpdateFunctions = {}
 
-    -- ========== 全屏遮罩（防穿透） ==========
+    -- 遮罩
     local DropdownOverlay = Instance.new("TextButton")
     DropdownOverlay.Name = "DropdownOverlay"
     DropdownOverlay.Size = UDim2.new(1, 0, 1, 0)
@@ -97,7 +96,7 @@ function Library:CreateWindow(options)
     DropdownOverlay.ZIndex = 5
     DropdownOverlay.Parent = ScreenGui
 
-    -- ========== 通知容器 ==========
+    -- 通知容器
     local NotificationContainer = Instance.new("Frame")
     NotificationContainer.Name = "NotificationContainer"
     NotificationContainer.AnchorPoint = Vector2.new(1, 0)
@@ -108,7 +107,7 @@ function Library:CreateWindow(options)
     NotificationContainer.ZIndex = 10
     NotificationContainer.Parent = ScreenGui
 
-    -- ========== 悬浮球 ==========
+    -- 悬浮球
     local FloatingBall = Instance.new("TextButton")
     FloatingBall.Name = "FloatingBall"
     FloatingBall.Size = UDim2.new(0, 50, 0, 50)
@@ -120,18 +119,16 @@ function Library:CreateWindow(options)
     FloatingBall.TextSize = 18
     FloatingBall.Parent = ScreenGui
     AddCorner(FloatingBall, 25)
-
     local UIStrokeBall = Instance.new("UIStroke", FloatingBall)
     UIStrokeBall.Color = Theme.Accent
     UIStrokeBall.Thickness = 2
-
     table.insert(themeUpdateFunctions, function(t)
         FloatingBall.BackgroundColor3 = t.ElementBackground
         FloatingBall.TextColor3 = t.TextColor
         UIStrokeBall.Color = t.Accent
     end)
 
-    -- ========== 主框架 ==========
+    -- 主框架
     local MainFrame = Instance.new("Frame")
     MainFrame.AnchorPoint = Vector2.new(0.5, 0.5)
     MainFrame.Position = UDim2.new(0.5, 0, 0.5, 0)
@@ -141,13 +138,11 @@ function Library:CreateWindow(options)
     MainFrame.ClipsDescendants = true
     MainFrame.Parent = ScreenGui
     AddCorner(MainFrame, 16)
-
     local MainStroke = Instance.new("UIStroke", MainFrame)
     MainStroke.Color = Theme.Accent
     MainStroke.Thickness = 1.5
     MainStroke.Transparency = 0.4
 
-    -- 渐变（若有）
     if Theme.Gradient then
         local grad = Theme.Gradient:Clone()
         grad.Parent = MainFrame
@@ -171,21 +166,18 @@ function Library:CreateWindow(options)
     TopBar.Parent = MainFrame
     local TopBarCorner = Instance.new("UICorner", TopBar)
     TopBarCorner.CornerRadius = UDim.new(0, 16)
-
     local BottomHideFrame = Instance.new("Frame")
     BottomHideFrame.Size = UDim2.new(1, 0, 0.5, 0)
     BottomHideFrame.Position = UDim2.new(0, 0, 0.5, 0)
     BottomHideFrame.BackgroundColor3 = Theme.TopBarBackground
     BottomHideFrame.BorderSizePixel = 0
     BottomHideFrame.Parent = TopBar
-
     local TopDivider = Instance.new("Frame")
     TopDivider.Size = UDim2.new(1, 0, 0, 1)
     TopDivider.Position = UDim2.new(0, 0, 1, -1)
     TopDivider.BackgroundColor3 = Theme.DividerColor
     TopDivider.BorderSizePixel = 0
     TopDivider.Parent = TopBar
-
     local TitleLabel = Instance.new("TextLabel")
     TitleLabel.Size = UDim2.new(1, -20, 1, 0)
     TitleLabel.Position = UDim2.new(0, 15, 0, 0)
@@ -196,7 +188,6 @@ function Library:CreateWindow(options)
     TitleLabel.TextSize = 16
     TitleLabel.TextXAlignment = Enum.TextXAlignment.Left
     TitleLabel.Parent = TopBar
-
     table.insert(themeUpdateFunctions, function(t)
         TopBar.BackgroundColor3 = t.TopBarBackground
         BottomHideFrame.BackgroundColor3 = t.TopBarBackground
@@ -213,21 +204,18 @@ function Library:CreateWindow(options)
     Sidebar.Parent = MainFrame
     local SidebarCorner = Instance.new("UICorner", Sidebar)
     SidebarCorner.CornerRadius = UDim.new(0, 16)
-
     local RightHideFrame = Instance.new("Frame")
     RightHideFrame.Size = UDim2.new(0.5, 0, 1, 0)
     RightHideFrame.Position = UDim2.new(0.5, 0, 0, 0)
     RightHideFrame.BackgroundColor3 = Theme.SidebarBackground
     RightHideFrame.BorderSizePixel = 0
     RightHideFrame.Parent = Sidebar
-
     local SideDivider = Instance.new("Frame")
     SideDivider.Size = UDim2.new(0, 1, 1, 0)
     SideDivider.Position = UDim2.new(1, -1, 0, 0)
     SideDivider.BackgroundColor3 = Theme.DividerColor
     SideDivider.BorderSizePixel = 0
     SideDivider.Parent = Sidebar
-
     local TabContainer = Instance.new("ScrollingFrame")
     TabContainer.Size = UDim2.new(1, 0, 1, -10)
     TabContainer.Position = UDim2.new(0, 0, 0, 5)
@@ -239,7 +227,6 @@ function Library:CreateWindow(options)
     TabListLayout.Padding = UDim.new(0, 5)
     TabListLayout.HorizontalAlignment = Enum.HorizontalAlignment.Center
     TabListLayout.Parent = TabContainer
-
     table.insert(themeUpdateFunctions, function(t)
         Sidebar.BackgroundColor3 = t.SidebarBackground
         RightHideFrame.BackgroundColor3 = t.SidebarBackground
@@ -271,11 +258,14 @@ function Library:CreateWindow(options)
         if currentDropdown then
             currentDropdown.list:Destroy()
             DropdownOverlay.Visible = false
+            if currentDropdown.conn then
+                currentDropdown.conn:Disconnect()
+            end
             currentDropdown = nil
         end
     end
 
-    -- ========== 主题API ==========
+    -- 主题系统
     function Window:SetTheme(newTheme)
         for k, v in pairs(newTheme) do
             if Theme[k] ~= nil then
@@ -284,13 +274,11 @@ function Library:CreateWindow(options)
         end
         -- 更新渐变
         if Theme.Gradient then
-            -- 移除旧渐变
             for _, child in ipairs(MainFrame:GetChildren()) do
                 if child:IsA("UIGradient") then child:Destroy() end
             end
             Theme.Gradient:Clone().Parent = MainFrame
         end
-        -- 执行所有主题更新函数
         for _, func in ipairs(themeUpdateFunctions) do
             func(Theme)
         end
@@ -318,7 +306,6 @@ function Library:CreateWindow(options)
         local stroke = Instance.new("UIStroke", notifFrame)
         stroke.Color = Theme.Accent
         stroke.Thickness = 1
-
         local titleLabel = Instance.new("TextLabel")
         titleLabel.Size = UDim2.new(1, -16, 0, 20)
         titleLabel.Position = UDim2.new(0, 8, 0, 6)
@@ -329,7 +316,6 @@ function Library:CreateWindow(options)
         titleLabel.TextSize = 14
         titleLabel.TextXAlignment = Enum.TextXAlignment.Left
         titleLabel.Parent = notifFrame
-
         local msgLabel = Instance.new("TextLabel")
         msgLabel.Size = UDim2.new(1, -16, 0, 20)
         msgLabel.Position = UDim2.new(0, 8, 0, 28)
@@ -341,10 +327,8 @@ function Library:CreateWindow(options)
         msgLabel.TextXAlignment = Enum.TextXAlignment.Left
         msgLabel.TextWrapped = true
         msgLabel.Parent = notifFrame
-
         notifFrame:TweenPosition(UDim2.new(1, -250, 0, 0), "Out", "Quad", 0.3)
         currentNotification = notifFrame
-
         delay(duration, function()
             if notifFrame and notifFrame.Parent then
                 notifFrame:TweenPosition(UDim2.new(1, 10, 0, 0), "In", "Quad", 0.3)
@@ -394,7 +378,7 @@ function Library:CreateWindow(options)
             selectedTabButton = TabButton
             table.insert(themeUpdateFunctions, function(t)
                 if selectedTabButton == TabButton then
-                    selectedTabButton.BackgroundColor3 = t.Accent
+                    TabButton.BackgroundColor3 = t.Accent
                 end
             end)
             FirstTab = false
@@ -421,8 +405,6 @@ function Library:CreateWindow(options)
         end)
 
         local Elements = {}
-        local ELEMENT_BG_DEFAULT = Theme.ElementBackground
-        local ELEMENT_TEXT_DEFAULT = Theme.ElementTextColor
 
         -- 标签
         function Elements:CreateLabel(text)
@@ -431,7 +413,6 @@ function Library:CreateWindow(options)
             LabelFrame.BackgroundColor3 = Theme.ElementBackground
             LabelFrame.Parent = TabPage
             AddCorner(LabelFrame, 8)
-
             local Label = Instance.new("TextLabel")
             Label.Size = UDim2.new(1, -20, 1, 0)
             Label.Position = UDim2.new(0, 10, 0, 0)
@@ -442,7 +423,6 @@ function Library:CreateWindow(options)
             Label.TextSize = 14
             Label.TextXAlignment = Enum.TextXAlignment.Left
             Label.Parent = LabelFrame
-
             table.insert(themeUpdateFunctions, function(t)
                 LabelFrame.BackgroundColor3 = t.ElementBackground
                 Label.TextColor3 = t.TextColor
@@ -461,17 +441,14 @@ function Library:CreateWindow(options)
             Button.TextXAlignment = Enum.TextXAlignment.Left
             Button.Parent = TabPage
             AddCorner(Button, 8)
-
             local padding = Instance.new("UIPadding")
             padding.PaddingLeft = UDim.new(0, 10)
             padding.Parent = Button
-
-            local function applyTheme(t)
+            local function apply(t)
                 Button.BackgroundColor3 = t.ElementBackground
                 Button.TextColor3 = t.ElementTextColor
             end
-            table.insert(themeUpdateFunctions, applyTheme)
-
+            table.insert(themeUpdateFunctions, apply)
             Button.MouseEnter:Connect(function()
                 TweenService:Create(Button, TweenInfo.new(0.2), {
                     BackgroundColor3 = Theme.Accent,
@@ -484,7 +461,6 @@ function Library:CreateWindow(options)
                     TextColor3 = Theme.ElementTextColor
                 }):Play()
             end)
-
             Button.MouseButton1Click:Connect(function()
                 pcall(callback)
             end)
@@ -498,7 +474,6 @@ function Library:CreateWindow(options)
             ToggleFrame.BackgroundColor3 = Theme.ElementBackground
             ToggleFrame.Parent = TabPage
             AddCorner(ToggleFrame, 8)
-
             local ToggleLabel = Instance.new("TextLabel")
             ToggleLabel.Size = UDim2.new(1, -60, 1, 0)
             ToggleLabel.Position = UDim2.new(0, 10, 0, 0)
@@ -509,7 +484,6 @@ function Library:CreateWindow(options)
             ToggleLabel.TextSize = 14
             ToggleLabel.TextXAlignment = Enum.TextXAlignment.Left
             ToggleLabel.Parent = ToggleFrame
-
             local ToggleBtn = Instance.new("TextButton")
             ToggleBtn.Size = UDim2.new(0, 40, 0, 20)
             ToggleBtn.Position = UDim2.new(1, -50, 0.5, -10)
@@ -517,21 +491,18 @@ function Library:CreateWindow(options)
             ToggleBtn.Text = ""
             ToggleBtn.Parent = ToggleFrame
             AddCorner(ToggleBtn, 10)
-
             local Indicator = Instance.new("Frame")
             Indicator.Size = UDim2.new(0, 16, 0, 16)
             Indicator.Position = toggled and UDim2.new(1, -18, 0.5, -8) or UDim2.new(0, 2, 0.5, -8)
             Indicator.BackgroundColor3 = Color3.fromRGB(255, 255, 255)
             Indicator.Parent = ToggleBtn
             AddCorner(Indicator, 8)
-
-            local function applyTheme(t)
+            local function apply(t)
                 ToggleFrame.BackgroundColor3 = t.ElementBackground
                 ToggleLabel.TextColor3 = t.TextColor
                 ToggleBtn.BackgroundColor3 = toggled and t.Accent or t.ToggleOffColor
             end
-            table.insert(themeUpdateFunctions, applyTheme)
-
+            table.insert(themeUpdateFunctions, apply)
             local function FireToggle()
                 toggled = not toggled
                 local goalColor = toggled and Theme.Accent or Theme.ToggleOffColor
@@ -540,7 +511,6 @@ function Library:CreateWindow(options)
                 TweenService:Create(Indicator, TweenInfo.new(0.2), {Position = goalPos}):Play()
                 pcall(callback, toggled)
             end
-
             ToggleBtn.MouseButton1Click:Connect(FireToggle)
         end
 
@@ -551,7 +521,6 @@ function Library:CreateWindow(options)
             SliderFrame.BackgroundColor3 = Theme.ElementBackground
             SliderFrame.Parent = TabPage
             AddCorner(SliderFrame, 8)
-
             local SliderLabel = Instance.new("TextLabel")
             SliderLabel.Size = UDim2.new(1, -20, 0, 25)
             SliderLabel.Position = UDim2.new(0, 10, 0, 0)
@@ -562,34 +531,24 @@ function Library:CreateWindow(options)
             SliderLabel.TextSize = 14
             SliderLabel.TextXAlignment = Enum.TextXAlignment.Left
             SliderLabel.Parent = SliderFrame
-
             local BarBackground = Instance.new("Frame")
             BarBackground.Size = UDim2.new(1, -20, 0, 8)
             BarBackground.Position = UDim2.new(0, 10, 0, 30)
             BarBackground.BackgroundColor3 = Color3.fromRGB(210, 210, 210)
             BarBackground.Parent = SliderFrame
             AddCorner(BarBackground, 4)
-
             local BarFill = Instance.new("Frame")
             local defaultScale = (default - min) / (max - min)
             BarFill.Size = UDim2.new(defaultScale, 0, 1, 0)
             BarFill.BackgroundColor3 = Theme.Accent
             BarFill.Parent = BarBackground
             AddCorner(BarFill, 4)
-
+            table.insert(themeUpdateFunctions, function(t) BarFill.BackgroundColor3 = t.Accent end)
             local SliderButton = Instance.new("TextButton")
             SliderButton.Size = UDim2.new(1, 0, 1, 0)
             SliderButton.BackgroundTransparency = 1
             SliderButton.Text = ""
             SliderButton.Parent = BarBackground
-
-            local function applyTheme(t)
-                SliderFrame.BackgroundColor3 = t.ElementBackground
-                SliderLabel.TextColor3 = t.TextColor
-                BarFill.BackgroundColor3 = t.Accent
-            end
-            table.insert(themeUpdateFunctions, applyTheme)
-
             local dragging = false
             local function updateSlider(input)
                 local pos = math.clamp(input.Position.X - BarBackground.AbsolutePosition.X, 0, BarBackground.AbsoluteSize.X)
@@ -599,7 +558,6 @@ function Library:CreateWindow(options)
                 SliderLabel.Text = text .. " : " .. tostring(value)
                 pcall(callback, value)
             end
-
             SliderButton.InputBegan:Connect(function(input)
                 if input.UserInputType == Enum.UserInputType.MouseButton1 or input.UserInputType == Enum.UserInputType.Touch then
                     dragging = true
@@ -625,7 +583,6 @@ function Library:CreateWindow(options)
             panel.BackgroundColor3 = Theme.ElementBackground
             panel.Parent = TabPage
             AddCorner(panel, 10)
-
             local avatar = Instance.new("ImageLabel")
             avatar.Size = UDim2.new(0, 55, 0, 55)
             avatar.Position = UDim2.new(0, 12, 0.5, -27)
@@ -640,17 +597,14 @@ function Library:CreateWindow(options)
                     avatar.Image = content
                 end)
             end)
-
             local infoFrame = Instance.new("Frame")
             infoFrame.Size = UDim2.new(1, -80, 1, -10)
             infoFrame.Position = UDim2.new(0, 75, 0, 5)
             infoFrame.BackgroundTransparency = 1
             infoFrame.Parent = panel
-
             local layout = Instance.new("UIListLayout")
             layout.Padding = UDim.new(0, 2)
             layout.Parent = infoFrame
-
             local nameLabel = Instance.new("TextLabel")
             nameLabel.Size = UDim2.new(1, 0, 0, 20)
             nameLabel.BackgroundTransparency = 1
@@ -660,7 +614,6 @@ function Library:CreateWindow(options)
             nameLabel.TextSize = 15
             nameLabel.TextXAlignment = Enum.TextXAlignment.Left
             nameLabel.Parent = infoFrame
-
             local serverLabel = Instance.new("TextLabel")
             serverLabel.Size = UDim2.new(1, 0, 0, 18)
             serverLabel.BackgroundTransparency = 1
@@ -670,7 +623,6 @@ function Library:CreateWindow(options)
             serverLabel.TextSize = 13
             serverLabel.TextXAlignment = Enum.TextXAlignment.Left
             serverLabel.Parent = infoFrame
-
             local execLabel = Instance.new("TextLabel")
             execLabel.Size = UDim2.new(1, 0, 0, 18)
             execLabel.BackgroundTransparency = 1
@@ -680,7 +632,6 @@ function Library:CreateWindow(options)
             execLabel.TextSize = 13
             execLabel.TextXAlignment = Enum.TextXAlignment.Left
             execLabel.Parent = infoFrame
-
             table.insert(themeUpdateFunctions, function(t)
                 panel.BackgroundColor3 = t.ElementBackground
                 nameLabel.TextColor3 = t.TextColor
@@ -690,18 +641,20 @@ function Library:CreateWindow(options)
             return panel
         end
 
-        -- 下拉菜单（修复定位）
+        -- 下拉菜单（最终修复版：按钮稳定在右侧，列表定位精准）
         function Elements:CreateDropdown(text, options, default, callback)
             if type(options) ~= "table" or #options == 0 then return end
             local selected = default or options[1]
+
             local DropdownFrame = Instance.new("Frame")
             DropdownFrame.Size = UDim2.new(1, 0, 0, 35)
             DropdownFrame.BackgroundColor3 = Theme.ElementBackground
             DropdownFrame.Parent = TabPage
             AddCorner(DropdownFrame, 8)
 
+            -- 左侧文字
             local DropdownLabel = Instance.new("TextLabel")
-            DropdownLabel.Size = UDim2.new(0.5, -10, 1, 0)
+            DropdownLabel.Size = UDim2.new(0.5, -20, 1, 0)
             DropdownLabel.Position = UDim2.new(0, 10, 0, 0)
             DropdownLabel.BackgroundTransparency = 1
             DropdownLabel.Text = text
@@ -711,10 +664,11 @@ function Library:CreateWindow(options)
             DropdownLabel.TextXAlignment = Enum.TextXAlignment.Left
             DropdownLabel.Parent = DropdownFrame
 
+            -- 按钮固定宽度，右对齐不依赖父尺寸比例
             local DropButton = Instance.new("TextButton")
-            DropButton.Size = UDim2.new(0.45, -20, 0, 28)
-            DropButton.Position = UDim2.new(1, -10, 0.5, -14)
+            DropButton.Size = UDim2.new(0, 120, 0, 28) -- 固定宽度120px，高度28px
             DropButton.AnchorPoint = Vector2.new(1, 0.5)
+            DropButton.Position = UDim2.new(1, -10, 0.5, 0) -- 距右侧10px，垂直居中
             DropButton.BackgroundColor3 = Color3.fromRGB(230, 230, 230)
             DropButton.Text = selected .. "  ▼"
             DropButton.TextColor3 = Theme.ElementTextColor
@@ -723,12 +677,12 @@ function Library:CreateWindow(options)
             DropButton.Parent = DropdownFrame
             AddCorner(DropButton, 6)
 
-            local function applyTheme(t)
+            local function apply(t)
                 DropdownFrame.BackgroundColor3 = t.ElementBackground
                 DropdownLabel.TextColor3 = t.TextColor
                 DropButton.TextColor3 = t.ElementTextColor
             end
-            table.insert(themeUpdateFunctions, applyTheme)
+            table.insert(themeUpdateFunctions, apply)
 
             DropButton.MouseButton1Click:Connect(function()
                 if currentDropdown and currentDropdown.button == DropButton then
@@ -752,7 +706,6 @@ function Library:CreateWindow(options)
 
                 for _, opt in ipairs(options) do
                     local optBtn = Instance.new("TextButton")
-                    optBtn.Name = opt
                     optBtn.Size = UDim2.new(1, 0, 0, 28)
                     optBtn.BackgroundColor3 = (opt == selected) and Theme.Accent or Theme.ElementBackground
                     optBtn.TextColor3 = (opt == selected) and Color3.fromRGB(255, 255, 255) or Theme.TextColor
@@ -784,19 +737,21 @@ function Library:CreateWindow(options)
                     end)
                 end
 
-                -- 正确计算位置（左对齐按钮）
+                -- 定位：列表贴在按钮下方，左边缘对齐按钮左边缘
                 local absPos = DropButton.AbsolutePosition
                 local absSize = DropButton.AbsoluteSize
                 list.Position = UDim2.new(0, absPos.X, 0, absPos.Y + absSize.Y + 2)
-                list.Size = UDim2.new(0, math.max(absSize.X, 200), 0, #options * 28)
+                list.Size = UDim2.new(0, absSize.X, 0, #options * 28)
 
                 DropdownOverlay.Visible = true
                 currentDropdown = {button = DropButton, list = list}
 
                 -- 点击遮罩关闭
-                DropdownOverlay.MouseButton1Click:Once(function()
+                local conn
+                conn = DropdownOverlay.MouseButton1Click:Connect(function()
                     closeDropdown()
                 end)
+                currentDropdown.conn = conn
             end)
 
             return DropdownFrame
@@ -812,7 +767,7 @@ function Library:CreateWindow(options)
     end
 
     -- 初始应用主题
-    Window:SetTheme({}) -- 触发首次更新
+    Window:SetTheme({})
 
     return Window
 end
