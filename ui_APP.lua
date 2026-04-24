@@ -1,5 +1,5 @@
 --[[
-    精美自适应通用 UI 库 (白色透明主题，完美圆角，无外层矩形边框)
+    精美自适应通用 UI 库 (乳白不透明主题，圆角设计)
     支持 PC & Mobile，悬浮球唤醒，动态模块创建
 ]]
 
@@ -69,13 +69,12 @@ function Library:CreateWindow(options)
     ScreenGui.ZIndexBehavior = Enum.ZIndexBehavior.Sibling
     ScreenGui.Parent = targetGui
 
-    -- 悬浮球
+    -- 悬浮球 (乳白不透明)
     local FloatingBall = Instance.new("TextButton")
     FloatingBall.Name = "FloatingBall"
     FloatingBall.Size = UDim2.new(0, 50, 0, 50)
     FloatingBall.Position = UDim2.new(0.1, 0, 0.1, 0)
-    FloatingBall.BackgroundColor3 = Color3.fromRGB(255, 255, 255)
-    FloatingBall.BackgroundTransparency = 0.2
+    FloatingBall.BackgroundColor3 = Color3.fromRGB(245, 245, 245) -- 乳白
     FloatingBall.Text = "UI"
     FloatingBall.TextColor3 = Color3.fromRGB(40, 40, 40)
     FloatingBall.Font = Enum.Font.GothamBold
@@ -87,23 +86,23 @@ function Library:CreateWindow(options)
     UIStrokeBall.Color = AccentColor
     UIStrokeBall.Thickness = 2
 
-    -- 主UI框架
+    -- 主UI框架 (乳白不透明，圆角)
     local MainFrame = Instance.new("Frame")
     MainFrame.Name = "MainFrame"
     MainFrame.AnchorPoint = Vector2.new(0.5, 0.5)
     MainFrame.Position = UDim2.new(0.5, 0, 0.5, 0)
     MainFrame.Size = UDim2.new(0.9, 0, 0.85, 0)
-    MainFrame.BackgroundColor3 = Color3.fromRGB(255, 255, 255)
-    MainFrame.BackgroundTransparency = 0.15
+    MainFrame.BackgroundColor3 = Color3.fromRGB(245, 245, 245)
     MainFrame.BorderSizePixel = 0
     MainFrame.ClipsDescendants = true
     MainFrame.Parent = ScreenGui
     AddCorner(MainFrame, 16)
 
+    -- 主窗口外描边
     local MainStroke = Instance.new("UIStroke", MainFrame)
     MainStroke.Color = AccentColor
     MainStroke.Thickness = 1.5
-    MainStroke.Transparency = 0.5
+    MainStroke.Transparency = 0.3
 
     -- 尺寸限制
     local SizeConstraint = Instance.new("UISizeConstraint")
@@ -111,25 +110,23 @@ function Library:CreateWindow(options)
     SizeConstraint.MinSize = Vector2.new(300, 250)
     SizeConstraint.Parent = MainFrame
 
-    -- 顶部栏 (改用与主框架对齐的圆角，移除自身背景)
+    -- 顶部栏 (乳白，单独处理圆角以免露出矩形尖角)
     local TopBar = Instance.new("Frame")
     TopBar.Name = "TopBar"
     TopBar.Size = UDim2.new(1, 0, 0, 40)
-    TopBar.BackgroundColor3 = Color3.fromRGB(255, 255, 255)
-    TopBar.BackgroundTransparency = 0.3
+    TopBar.BackgroundColor3 = Color3.fromRGB(245, 245, 245)
     TopBar.BorderSizePixel = 0
     TopBar.Parent = MainFrame
 
-    -- 单独处理顶部圆角，避免矩形角露出
+    -- 顶部栏圆角16，再用一个同色矩形遮盖底部圆角
     local TopBarCorner = Instance.new("UICorner")
     TopBarCorner.CornerRadius = UDim.new(0, 16)
     TopBarCorner.Parent = TopBar
-    -- 屏蔽底部圆角，只保留顶部圆角
+
     local BottomHideFrame = Instance.new("Frame")
     BottomHideFrame.Size = UDim2.new(1, 0, 0.5, 0)
     BottomHideFrame.Position = UDim2.new(0, 0, 0.5, 0)
-    BottomHideFrame.BackgroundColor3 = TopBar.BackgroundColor3
-    BottomHideFrame.BackgroundTransparency = TopBar.BackgroundTransparency
+    BottomHideFrame.BackgroundColor3 = Color3.fromRGB(245, 245, 245)
     BottomHideFrame.BorderSizePixel = 0
     BottomHideFrame.Parent = TopBar
 
@@ -144,25 +141,24 @@ function Library:CreateWindow(options)
     TitleLabel.TextXAlignment = Enum.TextXAlignment.Left
     TitleLabel.Parent = TopBar
 
-    -- 侧边栏，同样屏蔽右侧圆角
+    -- 侧边栏 (乳白，同样单独处理圆角)
     local Sidebar = Instance.new("Frame")
     Sidebar.Name = "Sidebar"
     Sidebar.Size = UDim2.new(0, 130, 1, -40)
     Sidebar.Position = UDim2.new(0, 0, 0, 40)
-    Sidebar.BackgroundColor3 = Color3.fromRGB(255, 255, 255)
-    Sidebar.BackgroundTransparency = 0.25
+    Sidebar.BackgroundColor3 = Color3.fromRGB(245, 245, 245)
     Sidebar.BorderSizePixel = 0
     Sidebar.Parent = MainFrame
 
     local SidebarCorner = Instance.new("UICorner")
     SidebarCorner.CornerRadius = UDim.new(0, 16)
     SidebarCorner.Parent = Sidebar
-    -- 屏蔽右侧圆角
+
+    -- 遮盖右侧圆角
     local RightHideFrame = Instance.new("Frame")
     RightHideFrame.Size = UDim2.new(0.5, 0, 1, 0)
     RightHideFrame.Position = UDim2.new(0.5, 0, 0, 0)
-    RightHideFrame.BackgroundColor3 = Sidebar.BackgroundColor3
-    RightHideFrame.BackgroundTransparency = Sidebar.BackgroundTransparency
+    RightHideFrame.BackgroundColor3 = Color3.fromRGB(245, 245, 245)
     RightHideFrame.BorderSizePixel = 0
     RightHideFrame.Parent = Sidebar
 
@@ -203,8 +199,7 @@ function Library:CreateWindow(options)
         local TabButton = Instance.new("TextButton")
         TabButton.Name = TabName
         TabButton.Size = UDim2.new(0.9, 0, 0, 30)
-        TabButton.BackgroundColor3 = Color3.fromRGB(240, 240, 240)
-        TabButton.BackgroundTransparency = 0.2
+        TabButton.BackgroundColor3 = Color3.fromRGB(235, 235, 235) -- 稍微深一点点的乳白
         TabButton.Text = TabName
         TabButton.TextColor3 = Color3.fromRGB(50, 50, 50)
         TabButton.Font = Enum.Font.GothamSemibold
@@ -234,7 +229,6 @@ function Library:CreateWindow(options)
         if FirstTab then
             TabButton.BackgroundColor3 = AccentColor
             TabButton.TextColor3 = Color3.fromRGB(255, 255, 255)
-            TabButton.BackgroundTransparency = 0
             FirstTab = false
         end
 
@@ -246,15 +240,13 @@ function Library:CreateWindow(options)
                     tabData.Page.Visible = true
                     TweenService:Create(tabData.Button, TweenInfo.new(0.2), {
                         BackgroundColor3 = AccentColor,
-                        TextColor3 = Color3.fromRGB(255, 255, 255),
-                        BackgroundTransparency = 0
+                        TextColor3 = Color3.fromRGB(255, 255, 255)
                     }):Play()
                 else
                     tabData.Page.Visible = false
                     TweenService:Create(tabData.Button, TweenInfo.new(0.2), {
-                        BackgroundColor3 = Color3.fromRGB(240, 240, 240),
-                        TextColor3 = Color3.fromRGB(50, 50, 50),
-                        BackgroundTransparency = 0.2
+                        BackgroundColor3 = Color3.fromRGB(235, 235, 235),
+                        TextColor3 = Color3.fromRGB(50, 50, 50)
                     }):Play()
                 end
             end
@@ -265,8 +257,7 @@ function Library:CreateWindow(options)
         function Elements:CreateLabel(text)
             local LabelFrame = Instance.new("Frame")
             LabelFrame.Size = UDim2.new(1, 0, 0, 30)
-            LabelFrame.BackgroundColor3 = Color3.fromRGB(245, 245, 245)
-            LabelFrame.BackgroundTransparency = 0.1
+            LabelFrame.BackgroundColor3 = Color3.fromRGB(235, 235, 235)
             LabelFrame.Parent = TabPage
             AddCorner(LabelFrame, 8)
 
@@ -285,8 +276,7 @@ function Library:CreateWindow(options)
         function Elements:CreateButton(text, callback)
             local Button = Instance.new("TextButton")
             Button.Size = UDim2.new(1, 0, 0, 35)
-            Button.BackgroundColor3 = Color3.fromRGB(230, 230, 230)
-            Button.BackgroundTransparency = 0.05
+            Button.BackgroundColor3 = Color3.fromRGB(225, 225, 225)
             Button.Text = text
             Button.TextColor3 = Color3.fromRGB(30, 30, 30)
             Button.Font = Enum.Font.GothamSemibold
@@ -297,15 +287,13 @@ function Library:CreateWindow(options)
             Button.MouseEnter:Connect(function()
                 TweenService:Create(Button, TweenInfo.new(0.2), {
                     BackgroundColor3 = AccentColor,
-                    TextColor3 = Color3.fromRGB(255, 255, 255),
-                    BackgroundTransparency = 0
+                    TextColor3 = Color3.fromRGB(255, 255, 255)
                 }):Play()
             end)
             Button.MouseLeave:Connect(function()
                 TweenService:Create(Button, TweenInfo.new(0.2), {
-                    BackgroundColor3 = Color3.fromRGB(230, 230, 230),
-                    TextColor3 = Color3.fromRGB(30, 30, 30),
-                    BackgroundTransparency = 0.05
+                    BackgroundColor3 = Color3.fromRGB(225, 225, 225),
+                    TextColor3 = Color3.fromRGB(30, 30, 30)
                 }):Play()
             end)
 
@@ -318,8 +306,7 @@ function Library:CreateWindow(options)
             local toggled = default or false
             local ToggleFrame = Instance.new("Frame")
             ToggleFrame.Size = UDim2.new(1, 0, 0, 35)
-            ToggleFrame.BackgroundColor3 = Color3.fromRGB(245, 245, 245)
-            ToggleFrame.BackgroundTransparency = 0.1
+            ToggleFrame.BackgroundColor3 = Color3.fromRGB(235, 235, 235)
             ToggleFrame.Parent = TabPage
             AddCorner(ToggleFrame, 8)
 
@@ -338,7 +325,6 @@ function Library:CreateWindow(options)
             ToggleBtn.Size = UDim2.new(0, 40, 0, 20)
             ToggleBtn.Position = UDim2.new(1, -50, 0.5, -10)
             ToggleBtn.BackgroundColor3 = toggled and AccentColor or Color3.fromRGB(180, 180, 180)
-            ToggleBtn.BackgroundTransparency = 0.1
             ToggleBtn.Text = ""
             ToggleBtn.Parent = ToggleFrame
             AddCorner(ToggleBtn, 10)
@@ -347,7 +333,6 @@ function Library:CreateWindow(options)
             Indicator.Size = UDim2.new(0, 16, 0, 16)
             Indicator.Position = toggled and UDim2.new(1, -18, 0.5, -8) or UDim2.new(0, 2, 0.5, -8)
             Indicator.BackgroundColor3 = Color3.fromRGB(255, 255, 255)
-            Indicator.BackgroundTransparency = 0
             Indicator.Parent = ToggleBtn
             AddCorner(Indicator, 8)
 
@@ -367,8 +352,7 @@ function Library:CreateWindow(options)
         function Elements:CreateSlider(text, min, max, default, callback)
             local SliderFrame = Instance.new("Frame")
             SliderFrame.Size = UDim2.new(1, 0, 0, 50)
-            SliderFrame.BackgroundColor3 = Color3.fromRGB(245, 245, 245)
-            SliderFrame.BackgroundTransparency = 0.1
+            SliderFrame.BackgroundColor3 = Color3.fromRGB(235, 235, 235)
             SliderFrame.Parent = TabPage
             AddCorner(SliderFrame, 8)
 
@@ -387,7 +371,6 @@ function Library:CreateWindow(options)
             BarBackground.Size = UDim2.new(1, -20, 0, 8)
             BarBackground.Position = UDim2.new(0, 10, 0, 30)
             BarBackground.BackgroundColor3 = Color3.fromRGB(200, 200, 200)
-            BarBackground.BackgroundTransparency = 0.2
             BarBackground.Parent = SliderFrame
             AddCorner(BarBackground, 4)
 
