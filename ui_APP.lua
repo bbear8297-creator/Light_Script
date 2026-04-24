@@ -1,13 +1,14 @@
 --[[
-    精美自适应通用 UI 库 v2.4
-    修复：下拉按钮绝对定位，确保始终在控件内
-    新增：下拉菜单、通知系统、动态主题、按钮左对齐
+    精美自适应通用 UI 库 v3.0
+    内置主题：Default, Ocean, Autumn, Sunset, WarmGradient
+    新增：ApplyTheme 快捷切换，消除下拉误触，自动信息获取
 ]]
 
 local UserInputService = game:GetService("UserInputService")
 local TweenService = game:GetService("TweenService")
 local CoreGui = game:GetService("CoreGui")
 local Players = game:GetService("Players")
+local MarketplaceService = game:GetService("MarketplaceService")
 
 local Library = {}
 
@@ -55,28 +56,90 @@ local function AddCorner(parent, radius)
     return corner
 end
 
--- 默认主题
-local DefaultTheme = {
-    Accent = Color3.fromRGB(85, 170, 255),
-    MainBackground = Color3.fromRGB(248, 248, 248),
-    SidebarBackground = Color3.fromRGB(240, 240, 240),
-    ElementBackground = Color3.fromRGB(245, 245, 245),
-    TopBarBackground = Color3.fromRGB(252, 252, 252),
-    TextColor = Color3.fromRGB(40, 40, 40),
-    TitleTextColor = Color3.fromRGB(30, 30, 30),
-    ElementTextColor = Color3.fromRGB(30, 30, 30),
-    ToggleOffColor = Color3.fromRGB(180, 180, 180),
-    DividerColor = Color3.fromRGB(220, 220, 220),
-    Gradient = nil
+-- ========== 内置主题库 ==========
+Library.Themes = {
+    Default = {
+        Accent = Color3.fromRGB(85, 170, 255),
+        MainBackground = Color3.fromRGB(248, 248, 248),
+        SidebarBackground = Color3.fromRGB(240, 240, 240),
+        ElementBackground = Color3.fromRGB(245, 245, 245),
+        TopBarBackground = Color3.fromRGB(252, 252, 252),
+        TextColor = Color3.fromRGB(40, 40, 40),
+        TitleTextColor = Color3.fromRGB(30, 30, 30),
+        ElementTextColor = Color3.fromRGB(30, 30, 30),
+        ToggleOffColor = Color3.fromRGB(180, 180, 180),
+        DividerColor = Color3.fromRGB(220, 220, 220),
+        Gradient = nil
+    },
+    Ocean = {
+        Accent = Color3.fromRGB(0, 180, 180),
+        MainBackground = Color3.fromRGB(230, 245, 250),
+        SidebarBackground = Color3.fromRGB(200, 235, 240),
+        ElementBackground = Color3.fromRGB(235, 248, 252),
+        TextColor = Color3.fromRGB(20, 60, 80),
+        TitleTextColor = Color3.fromRGB(15, 45, 60),
+        ElementTextColor = Color3.fromRGB(20, 70, 90),
+        ToggleOffColor = Color3.fromRGB(170, 210, 220),
+        DividerColor = Color3.fromRGB(180, 215, 225),
+        Gradient = nil
+    },
+    Autumn = {
+        Accent = Color3.fromRGB(255, 140, 0),
+        MainBackground = Color3.fromRGB(250, 245, 235),
+        SidebarBackground = Color3.fromRGB(240, 230, 210),
+        ElementBackground = Color3.fromRGB(245, 235, 220),
+        TextColor = Color3.fromRGB(80, 50, 30),
+        TitleTextColor = Color3.fromRGB(60, 40, 20),
+        ElementTextColor = Color3.fromRGB(70, 45, 25),
+        ToggleOffColor = Color3.fromRGB(200, 180, 160),
+        DividerColor = Color3.fromRGB(210, 190, 170),
+        Gradient = nil
+    },
+    Sunset = {
+        Accent = Color3.fromRGB(255, 80, 100),
+        MainBackground = Color3.fromRGB(255, 240, 240),
+        SidebarBackground = Color3.fromRGB(255, 225, 225),
+        ElementBackground = Color3.fromRGB(255, 245, 245),
+        TextColor = Color3.fromRGB(80, 40, 40),
+        TitleTextColor = Color3.fromRGB(60, 20, 20),
+        ElementTextColor = Color3.fromRGB(90, 45, 45),
+        ToggleOffColor = Color3.fromRGB(220, 190, 190),
+        DividerColor = Color3.fromRGB(230, 210, 210),
+        Gradient = nil
+    },
+    WarmGradient = {
+        Accent = Color3.fromRGB(255, 100, 80),
+        MainBackground = Color3.fromRGB(255, 240, 230),
+        SidebarBackground = Color3.fromRGB(250, 230, 220),
+        ElementBackground = Color3.fromRGB(255, 245, 240),
+        TextColor = Color3.fromRGB(80, 50, 40),
+        TitleTextColor = Color3.fromRGB(60, 30, 20),
+        ElementTextColor = Color3.fromRGB(90, 55, 45),
+        ToggleOffColor = Color3.fromRGB(220, 200, 190),
+        DividerColor = Color3.fromRGB(230, 210, 200),
+        Gradient = Instance.new("UIGradient") -- 启用渐变
+    }
 }
 
+-- 配置 WarmGradient 的渐变
+local warmGrad = Library.Themes.WarmGradient.Gradient
+warmGrad.Color = ColorSequence.new({
+    ColorSequenceKeypoint.new(0, Color3.fromRGB(255, 200, 150)),
+    ColorSequenceKeypoint.new(1, Color3.fromRGB(255, 120, 100))
+})
+warmGrad.Rotation = 45
+
+-- ========== 创建窗口 ==========
 function Library:CreateWindow(options)
     local WindowTitle = options.Title or "My Executor UI"
-    local initialTheme = options.Theme or {}
+    local initialTheme = options.Theme or "Default"
+
     local Theme = {}
-    for k, v in pairs(DefaultTheme) do
-        Theme[k] = initialTheme[k] or v
+    local function loadTheme(name)
+        local t = Library.Themes[name] or Library.Themes.Default
+        for k, v in pairs(t) do Theme[k] = v end
     end
+    loadTheme(initialTheme)
 
     local ScreenGui = Instance.new("ScreenGui")
     ScreenGui.Name = "UniversalExecutorUI"
@@ -88,7 +151,6 @@ function Library:CreateWindow(options)
 
     -- 遮罩
     local DropdownOverlay = Instance.new("TextButton")
-    DropdownOverlay.Name = "DropdownOverlay"
     DropdownOverlay.Size = UDim2.new(1, 0, 1, 0)
     DropdownOverlay.BackgroundTransparency = 1
     DropdownOverlay.Text = ""
@@ -98,7 +160,6 @@ function Library:CreateWindow(options)
 
     -- 通知容器
     local NotificationContainer = Instance.new("Frame")
-    NotificationContainer.Name = "NotificationContainer"
     NotificationContainer.AnchorPoint = Vector2.new(1, 0)
     NotificationContainer.Position = UDim2.new(1, -10, 0, 50)
     NotificationContainer.Size = UDim2.new(0, 250, 1, -60)
@@ -109,7 +170,6 @@ function Library:CreateWindow(options)
 
     -- 悬浮球
     local FloatingBall = Instance.new("TextButton")
-    FloatingBall.Name = "FloatingBall"
     FloatingBall.Size = UDim2.new(0, 50, 0, 50)
     FloatingBall.Position = UDim2.new(0.1, 0, 0.1, 0)
     FloatingBall.BackgroundColor3 = Theme.ElementBackground
@@ -142,20 +202,24 @@ function Library:CreateWindow(options)
     MainStroke.Color = Theme.Accent
     MainStroke.Thickness = 1.5
     MainStroke.Transparency = 0.4
-
     if Theme.Gradient then
         local grad = Theme.Gradient:Clone()
         grad.Parent = MainFrame
     end
-
     local SizeConstraint = Instance.new("UISizeConstraint")
     SizeConstraint.MaxSize = Vector2.new(650, 400)
     SizeConstraint.MinSize = Vector2.new(300, 250)
     SizeConstraint.Parent = MainFrame
-
     table.insert(themeUpdateFunctions, function(t)
         MainFrame.BackgroundColor3 = t.MainBackground
         MainStroke.Color = t.Accent
+        -- 渐变处理
+        for _, child in ipairs(MainFrame:GetChildren()) do
+            if child:IsA("UIGradient") then child:Destroy() end
+        end
+        if t.Gradient then
+            t.Gradient:Clone().Parent = MainFrame
+        end
     end)
 
     -- 顶部栏
@@ -258,34 +322,22 @@ function Library:CreateWindow(options)
         if currentDropdown then
             currentDropdown.list:Destroy()
             DropdownOverlay.Visible = false
-            if currentDropdown.conn then
-                currentDropdown.conn:Disconnect()
-            end
+            if currentDropdown.conn then currentDropdown.conn:Disconnect() end
             currentDropdown = nil
         end
     end
 
-    -- 主题系统
-    function Window:SetTheme(newTheme)
-        for k, v in pairs(newTheme) do
-            if Theme[k] ~= nil then
-                Theme[k] = v
-            end
-        end
-        -- 更新渐变
-        if Theme.Gradient then
-            for _, child in ipairs(MainFrame:GetChildren()) do
-                if child:IsA("UIGradient") then child:Destroy() end
-            end
-            Theme.Gradient:Clone().Parent = MainFrame
-        end
+    -- 主题API
+    function Window:ApplyTheme(themeName)
+        loadTheme(themeName)
         for _, func in ipairs(themeUpdateFunctions) do
             func(Theme)
         end
     end
 
     function Window:SetAccentColor(color)
-        self:SetTheme({ Accent = color })
+        Theme.Accent = color
+        self:ApplyTheme(Theme) -- 快速刷新
     end
 
     -- 通知系统
@@ -617,7 +669,7 @@ function Library:CreateWindow(options)
             local serverLabel = Instance.new("TextLabel")
             serverLabel.Size = UDim2.new(1, 0, 0, 18)
             serverLabel.BackgroundTransparency = 1
-            serverLabel.Text = info.ServerInfo or "服务器信息: 未知"
+            serverLabel.Text = info.ServerInfo or "Server: unknown"
             serverLabel.TextColor3 = Theme.TextColor
             serverLabel.Font = Enum.Font.Gotham
             serverLabel.TextSize = 13
@@ -626,7 +678,7 @@ function Library:CreateWindow(options)
             local execLabel = Instance.new("TextLabel")
             execLabel.Size = UDim2.new(1, 0, 0, 18)
             execLabel.BackgroundTransparency = 1
-            execLabel.Text = info.ExecutorInfo or "注入器: 未知"
+            execLabel.Text = info.ExecutorInfo or "Executor: unknown"
             execLabel.TextColor3 = Theme.TextColor
             execLabel.Font = Enum.Font.Gotham
             execLabel.TextSize = 13
@@ -641,7 +693,7 @@ function Library:CreateWindow(options)
             return panel
         end
 
-        -- 下拉菜单（最终修复版：按钮稳定在右侧，列表定位精准）
+        -- 下拉菜单（最终版：绝对定位，无穿透）
         function Elements:CreateDropdown(text, options, default, callback)
             if type(options) ~= "table" or #options == 0 then return end
             local selected = default or options[1]
@@ -652,7 +704,6 @@ function Library:CreateWindow(options)
             DropdownFrame.Parent = TabPage
             AddCorner(DropdownFrame, 8)
 
-            -- 左侧文字
             local DropdownLabel = Instance.new("TextLabel")
             DropdownLabel.Size = UDim2.new(0.5, -20, 1, 0)
             DropdownLabel.Position = UDim2.new(0, 10, 0, 0)
@@ -664,11 +715,10 @@ function Library:CreateWindow(options)
             DropdownLabel.TextXAlignment = Enum.TextXAlignment.Left
             DropdownLabel.Parent = DropdownFrame
 
-            -- 按钮固定宽度，右对齐不依赖父尺寸比例
             local DropButton = Instance.new("TextButton")
-            DropButton.Size = UDim2.new(0, 120, 0, 28) -- 固定宽度120px，高度28px
+            DropButton.Size = UDim2.new(0, 130, 0, 28) -- 固定宽度
             DropButton.AnchorPoint = Vector2.new(1, 0.5)
-            DropButton.Position = UDim2.new(1, -10, 0.5, 0) -- 距右侧10px，垂直居中
+            DropButton.Position = UDim2.new(1, -10, 0.5, 0)
             DropButton.BackgroundColor3 = Color3.fromRGB(230, 230, 230)
             DropButton.Text = selected .. "  ▼"
             DropButton.TextColor3 = Theme.ElementTextColor
@@ -692,7 +742,6 @@ function Library:CreateWindow(options)
 
                 closeDropdown()
 
-                -- 创建下拉列表
                 local list = Instance.new("Frame")
                 list.Name = "DropdownList"
                 list.BackgroundColor3 = Theme.ElementBackground
@@ -737,7 +786,6 @@ function Library:CreateWindow(options)
                     end)
                 end
 
-                -- 定位：列表贴在按钮下方，左边缘对齐按钮左边缘
                 local absPos = DropButton.AbsolutePosition
                 local absSize = DropButton.AbsoluteSize
                 list.Position = UDim2.new(0, absPos.X, 0, absPos.Y + absSize.Y + 2)
@@ -745,8 +793,6 @@ function Library:CreateWindow(options)
 
                 DropdownOverlay.Visible = true
                 currentDropdown = {button = DropButton, list = list}
-
-                -- 点击遮罩关闭
                 local conn
                 conn = DropdownOverlay.MouseButton1Click:Connect(function()
                     closeDropdown()
@@ -766,8 +812,8 @@ function Library:CreateWindow(options)
         end
     end
 
-    -- 初始应用主题
-    Window:SetTheme({})
+    -- 初始应用默认主题
+    Window:ApplyTheme(initialTheme)
 
     return Window
 end
