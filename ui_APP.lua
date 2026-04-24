@@ -1,5 +1,5 @@
 --[[
-    精美自适应通用 UI 库 (乳白不透明主题，圆角设计)
+    精美自适应通用 UI 库 (乳白不透明主题，圆角设计，层次微显)
     支持 PC & Mobile，悬浮球唤醒，动态模块创建
 ]]
 
@@ -58,6 +58,16 @@ local function AddCorner(parent, radius)
     return corner
 end
 
+-- 为元素添加极浅描边
+local function AddSubtleStroke(parent)
+    local stroke = Instance.new("UIStroke")
+    stroke.Color = Color3.fromRGB(210, 210, 210)
+    stroke.Thickness = 1
+    stroke.Transparency = 0.6
+    stroke.Parent = parent
+    return stroke
+end
+
 -- 库初始化
 function Library:CreateWindow(options)
     local WindowTitle = options.Title or "My Executor UI"
@@ -74,7 +84,7 @@ function Library:CreateWindow(options)
     FloatingBall.Name = "FloatingBall"
     FloatingBall.Size = UDim2.new(0, 50, 0, 50)
     FloatingBall.Position = UDim2.new(0.1, 0, 0.1, 0)
-    FloatingBall.BackgroundColor3 = Color3.fromRGB(245, 245, 245) -- 乳白
+    FloatingBall.BackgroundColor3 = Color3.fromRGB(245, 245, 245)
     FloatingBall.Text = "UI"
     FloatingBall.TextColor3 = Color3.fromRGB(40, 40, 40)
     FloatingBall.Font = Enum.Font.GothamBold
@@ -102,7 +112,7 @@ function Library:CreateWindow(options)
     local MainStroke = Instance.new("UIStroke", MainFrame)
     MainStroke.Color = AccentColor
     MainStroke.Thickness = 1.5
-    MainStroke.Transparency = 0.3
+    MainStroke.Transparency = 0.4
 
     -- 尺寸限制
     local SizeConstraint = Instance.new("UISizeConstraint")
@@ -110,7 +120,7 @@ function Library:CreateWindow(options)
     SizeConstraint.MinSize = Vector2.new(300, 250)
     SizeConstraint.Parent = MainFrame
 
-    -- 顶部栏 (乳白，单独处理圆角以免露出矩形尖角)
+    -- 顶部栏 (乳白，单独处理圆角)
     local TopBar = Instance.new("Frame")
     TopBar.Name = "TopBar"
     TopBar.Size = UDim2.new(1, 0, 0, 40)
@@ -118,7 +128,6 @@ function Library:CreateWindow(options)
     TopBar.BorderSizePixel = 0
     TopBar.Parent = MainFrame
 
-    -- 顶部栏圆角16，再用一个同色矩形遮盖底部圆角
     local TopBarCorner = Instance.new("UICorner")
     TopBarCorner.CornerRadius = UDim.new(0, 16)
     TopBarCorner.Parent = TopBar
@@ -154,7 +163,6 @@ function Library:CreateWindow(options)
     SidebarCorner.CornerRadius = UDim.new(0, 16)
     SidebarCorner.Parent = Sidebar
 
-    -- 遮盖右侧圆角
     local RightHideFrame = Instance.new("Frame")
     RightHideFrame.Size = UDim2.new(0.5, 0, 1, 0)
     RightHideFrame.Position = UDim2.new(0.5, 0, 0, 0)
@@ -199,7 +207,7 @@ function Library:CreateWindow(options)
         local TabButton = Instance.new("TextButton")
         TabButton.Name = TabName
         TabButton.Size = UDim2.new(0.9, 0, 0, 30)
-        TabButton.BackgroundColor3 = Color3.fromRGB(235, 235, 235) -- 稍微深一点点的乳白
+        TabButton.BackgroundColor3 = Color3.fromRGB(235, 235, 235) -- 微深
         TabButton.Text = TabName
         TabButton.TextColor3 = Color3.fromRGB(50, 50, 50)
         TabButton.Font = Enum.Font.GothamSemibold
@@ -257,9 +265,10 @@ function Library:CreateWindow(options)
         function Elements:CreateLabel(text)
             local LabelFrame = Instance.new("Frame")
             LabelFrame.Size = UDim2.new(1, 0, 0, 30)
-            LabelFrame.BackgroundColor3 = Color3.fromRGB(235, 235, 235)
+            LabelFrame.BackgroundColor3 = Color3.fromRGB(240, 240, 240) -- 比页面背景稍暗
             LabelFrame.Parent = TabPage
             AddCorner(LabelFrame, 8)
+            AddSubtleStroke(LabelFrame)
 
             local Label = Instance.new("TextLabel")
             Label.Size = UDim2.new(1, -20, 1, 0)
@@ -276,13 +285,14 @@ function Library:CreateWindow(options)
         function Elements:CreateButton(text, callback)
             local Button = Instance.new("TextButton")
             Button.Size = UDim2.new(1, 0, 0, 35)
-            Button.BackgroundColor3 = Color3.fromRGB(225, 225, 225)
+            Button.BackgroundColor3 = Color3.fromRGB(240, 240, 240)
             Button.Text = text
             Button.TextColor3 = Color3.fromRGB(30, 30, 30)
             Button.Font = Enum.Font.GothamSemibold
             Button.TextSize = 14
             Button.Parent = TabPage
             AddCorner(Button, 8)
+            AddSubtleStroke(Button)
 
             Button.MouseEnter:Connect(function()
                 TweenService:Create(Button, TweenInfo.new(0.2), {
@@ -292,7 +302,7 @@ function Library:CreateWindow(options)
             end)
             Button.MouseLeave:Connect(function()
                 TweenService:Create(Button, TweenInfo.new(0.2), {
-                    BackgroundColor3 = Color3.fromRGB(225, 225, 225),
+                    BackgroundColor3 = Color3.fromRGB(240, 240, 240),
                     TextColor3 = Color3.fromRGB(30, 30, 30)
                 }):Play()
             end)
@@ -306,9 +316,10 @@ function Library:CreateWindow(options)
             local toggled = default or false
             local ToggleFrame = Instance.new("Frame")
             ToggleFrame.Size = UDim2.new(1, 0, 0, 35)
-            ToggleFrame.BackgroundColor3 = Color3.fromRGB(235, 235, 235)
+            ToggleFrame.BackgroundColor3 = Color3.fromRGB(240, 240, 240)
             ToggleFrame.Parent = TabPage
             AddCorner(ToggleFrame, 8)
+            AddSubtleStroke(ToggleFrame)
 
             local ToggleLabel = Instance.new("TextLabel")
             ToggleLabel.Size = UDim2.new(1, -60, 1, 0)
@@ -352,9 +363,10 @@ function Library:CreateWindow(options)
         function Elements:CreateSlider(text, min, max, default, callback)
             local SliderFrame = Instance.new("Frame")
             SliderFrame.Size = UDim2.new(1, 0, 0, 50)
-            SliderFrame.BackgroundColor3 = Color3.fromRGB(235, 235, 235)
+            SliderFrame.BackgroundColor3 = Color3.fromRGB(240, 240, 240)
             SliderFrame.Parent = TabPage
             AddCorner(SliderFrame, 8)
+            AddSubtleStroke(SliderFrame)
 
             local SliderLabel = Instance.new("TextLabel")
             SliderLabel.Size = UDim2.new(1, -20, 0, 25)
@@ -370,7 +382,7 @@ function Library:CreateWindow(options)
             local BarBackground = Instance.new("Frame")
             BarBackground.Size = UDim2.new(1, -20, 0, 8)
             BarBackground.Position = UDim2.new(0, 10, 0, 30)
-            BarBackground.BackgroundColor3 = Color3.fromRGB(200, 200, 200)
+            BarBackground.BackgroundColor3 = Color3.fromRGB(210, 210, 210)
             BarBackground.Parent = SliderFrame
             AddCorner(BarBackground, 4)
 
