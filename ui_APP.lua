@@ -1,5 +1,5 @@
 --[[
-    精美自适应通用 UI 库 (白色透明主题，圆角设计)
+    精美自适应通用 UI 库 (白色透明主题，完美圆角，无外层矩形边框)
     支持 PC & Mobile，悬浮球唤醒，动态模块创建
 ]]
 
@@ -9,13 +9,13 @@ local CoreGui = game:GetService("CoreGui")
 
 local Library = {}
 
--- 保护UI容器，优先放置于CoreGui防重置
+-- 保护UI容器
 local targetGui = (gethui and gethui()) or CoreGui
 if not targetGui:FindFirstChild("RobloxGui") and not pcall(function() return CoreGui.Name end) then
     targetGui = game:GetService("Players").LocalPlayer:WaitForChild("PlayerGui")
 end
 
--- 全局拖拽函数 (兼容鼠标与触屏)
+-- 全局拖拽函数
 local function MakeDraggable(dragArea, moveObject)
     local dragging = false
     local dragInput, dragStart, startPos
@@ -25,7 +25,6 @@ local function MakeDraggable(dragArea, moveObject)
             dragging = true
             dragStart = input.Position
             startPos = moveObject.Position
-
             input.Changed:Connect(function()
                 if input.UserInputState == Enum.UserInputState.End then
                     dragging = false
@@ -51,7 +50,7 @@ local function MakeDraggable(dragArea, moveObject)
     end)
 end
 
--- 快速创建 UI 元素圆角
+-- 圆角工具
 local function AddCorner(parent, radius)
     local corner = Instance.new("UICorner")
     corner.CornerRadius = UDim.new(0, radius)
@@ -59,56 +58,60 @@ local function AddCorner(parent, radius)
     return corner
 end
 
--- 库初始化：创建窗口
+-- 库初始化
 function Library:CreateWindow(options)
     local WindowTitle = options.Title or "My Executor UI"
     local AccentColor = options.Color or Color3.fromRGB(85, 170, 255)
 
-    -- 主屏幕GUI
     local ScreenGui = Instance.new("ScreenGui")
     ScreenGui.Name = "UniversalExecutorUI"
     ScreenGui.ResetOnSpawn = false
     ScreenGui.ZIndexBehavior = Enum.ZIndexBehavior.Sibling
     ScreenGui.Parent = targetGui
 
-    -- 悬浮球 (可拖拽, 点击显示/隐藏主UI) - 白色半透明
+    -- 悬浮球
     local FloatingBall = Instance.new("TextButton")
     FloatingBall.Name = "FloatingBall"
     FloatingBall.Size = UDim2.new(0, 50, 0, 50)
     FloatingBall.Position = UDim2.new(0.1, 0, 0.1, 0)
     FloatingBall.BackgroundColor3 = Color3.fromRGB(255, 255, 255)
-    FloatingBall.BackgroundTransparency = 0.3
+    FloatingBall.BackgroundTransparency = 0.2
     FloatingBall.Text = "UI"
     FloatingBall.TextColor3 = Color3.fromRGB(40, 40, 40)
     FloatingBall.Font = Enum.Font.GothamBold
     FloatingBall.TextSize = 18
     FloatingBall.Parent = ScreenGui
-    AddCorner(FloatingBall, 25) -- 圆形
+    AddCorner(FloatingBall, 25)
     
     local UIStrokeBall = Instance.new("UIStroke", FloatingBall)
     UIStrokeBall.Color = AccentColor
     UIStrokeBall.Thickness = 2
 
-    -- 主UI框架 (自适应居中) - 白色半透明，圆角加大
+    -- 主UI框架
     local MainFrame = Instance.new("Frame")
     MainFrame.Name = "MainFrame"
     MainFrame.AnchorPoint = Vector2.new(0.5, 0.5)
     MainFrame.Position = UDim2.new(0.5, 0, 0.5, 0)
     MainFrame.Size = UDim2.new(0.9, 0, 0.85, 0)
     MainFrame.BackgroundColor3 = Color3.fromRGB(255, 255, 255)
-    MainFrame.BackgroundTransparency = 0.2
+    MainFrame.BackgroundTransparency = 0.15
     MainFrame.BorderSizePixel = 0
     MainFrame.ClipsDescendants = true
     MainFrame.Parent = ScreenGui
-    AddCorner(MainFrame, 16) -- 主体圆角设计
+    AddCorner(MainFrame, 16)
 
-    -- 尺寸限制 (防止PC屏幕过大时失真)
+    local MainStroke = Instance.new("UIStroke", MainFrame)
+    MainStroke.Color = AccentColor
+    MainStroke.Thickness = 1.5
+    MainStroke.Transparency = 0.5
+
+    -- 尺寸限制
     local SizeConstraint = Instance.new("UISizeConstraint")
     SizeConstraint.MaxSize = Vector2.new(650, 400)
     SizeConstraint.MinSize = Vector2.new(300, 250)
     SizeConstraint.Parent = MainFrame
 
-    -- 拖拽区域与顶部标题 - 白色半透明
+    -- 顶部栏 (改用与主框架对齐的圆角，移除自身背景)
     local TopBar = Instance.new("Frame")
     TopBar.Name = "TopBar"
     TopBar.Size = UDim2.new(1, 0, 0, 40)
@@ -116,6 +119,19 @@ function Library:CreateWindow(options)
     TopBar.BackgroundTransparency = 0.3
     TopBar.BorderSizePixel = 0
     TopBar.Parent = MainFrame
+
+    -- 单独处理顶部圆角，避免矩形角露出
+    local TopBarCorner = Instance.new("UICorner")
+    TopBarCorner.CornerRadius = UDim.new(0, 16)
+    TopBarCorner.Parent = TopBar
+    -- 屏蔽底部圆角，只保留顶部圆角
+    local BottomHideFrame = Instance.new("Frame")
+    BottomHideFrame.Size = UDim2.new(1, 0, 0.5, 0)
+    BottomHideFrame.Position = UDim2.new(0, 0, 0.5, 0)
+    BottomHideFrame.BackgroundColor3 = TopBar.BackgroundColor3
+    BottomHideFrame.BackgroundTransparency = TopBar.BackgroundTransparency
+    BottomHideFrame.BorderSizePixel = 0
+    BottomHideFrame.Parent = TopBar
 
     local TitleLabel = Instance.new("TextLabel")
     TitleLabel.Size = UDim2.new(1, -20, 1, 0)
@@ -128,15 +144,27 @@ function Library:CreateWindow(options)
     TitleLabel.TextXAlignment = Enum.TextXAlignment.Left
     TitleLabel.Parent = TopBar
 
-    -- 侧边栏 (导航区) - 白色半透明
+    -- 侧边栏，同样屏蔽右侧圆角
     local Sidebar = Instance.new("Frame")
     Sidebar.Name = "Sidebar"
     Sidebar.Size = UDim2.new(0, 130, 1, -40)
     Sidebar.Position = UDim2.new(0, 0, 0, 40)
     Sidebar.BackgroundColor3 = Color3.fromRGB(255, 255, 255)
-    Sidebar.BackgroundTransparency = 0.3
+    Sidebar.BackgroundTransparency = 0.25
     Sidebar.BorderSizePixel = 0
     Sidebar.Parent = MainFrame
+
+    local SidebarCorner = Instance.new("UICorner")
+    SidebarCorner.CornerRadius = UDim.new(0, 16)
+    SidebarCorner.Parent = Sidebar
+    -- 屏蔽右侧圆角
+    local RightHideFrame = Instance.new("Frame")
+    RightHideFrame.Size = UDim2.new(0.5, 0, 1, 0)
+    RightHideFrame.Position = UDim2.new(0.5, 0, 0, 0)
+    RightHideFrame.BackgroundColor3 = Sidebar.BackgroundColor3
+    RightHideFrame.BackgroundTransparency = Sidebar.BackgroundTransparency
+    RightHideFrame.BorderSizePixel = 0
+    RightHideFrame.Parent = Sidebar
 
     local TabContainer = Instance.new("ScrollingFrame")
     TabContainer.Size = UDim2.new(1, 0, 1, -10)
@@ -151,7 +179,7 @@ function Library:CreateWindow(options)
     TabListLayout.HorizontalAlignment = Enum.HorizontalAlignment.Center
     TabListLayout.Parent = TabContainer
 
-    -- 内容区 (模块界面展示区)
+    -- 内容区
     local ContentContainer = Instance.new("Frame")
     ContentContainer.Name = "ContentContainer"
     ContentContainer.Size = UDim2.new(1, -130, 1, -40)
@@ -159,11 +187,10 @@ function Library:CreateWindow(options)
     ContentContainer.BackgroundTransparency = 1
     ContentContainer.Parent = MainFrame
 
-    -- 激活拖拽功能
+    -- 拖拽
     MakeDraggable(TopBar, MainFrame)
     MakeDraggable(FloatingBall, FloatingBall)
 
-    -- 悬浮球点击事件
     FloatingBall.MouseButton1Click:Connect(function()
         MainFrame.Visible = not MainFrame.Visible
     end)
@@ -172,19 +199,18 @@ function Library:CreateWindow(options)
     local Tabs = {}
     local FirstTab = true
 
-    -- 创建侧边栏模块 (Tab)
     function Window:CreateTab(TabName)
         local TabButton = Instance.new("TextButton")
         TabButton.Name = TabName
         TabButton.Size = UDim2.new(0.9, 0, 0, 30)
-        TabButton.BackgroundColor3 = Color3.fromRGB(240, 240, 240) -- 浅色未激活
+        TabButton.BackgroundColor3 = Color3.fromRGB(240, 240, 240)
         TabButton.BackgroundTransparency = 0.2
         TabButton.Text = TabName
         TabButton.TextColor3 = Color3.fromRGB(50, 50, 50)
         TabButton.Font = Enum.Font.GothamSemibold
         TabButton.TextSize = 14
         TabButton.Parent = TabContainer
-        AddCorner(TabButton, 8) -- 圆角
+        AddCorner(TabButton, 8)
 
         local TabPage = Instance.new("ScrollingFrame")
         TabPage.Name = TabName .. "_Page"
@@ -201,7 +227,6 @@ function Library:CreateWindow(options)
         PageLayout.Padding = UDim.new(0, 8)
         PageLayout.Parent = TabPage
 
-        -- 自动更新滚动条画布大小
         PageLayout:GetPropertyChangedSignal("AbsoluteContentSize"):Connect(function()
             TabPage.CanvasSize = UDim2.new(0, 0, 0, PageLayout.AbsoluteContentSize.Y + 10)
         end)
@@ -215,7 +240,6 @@ function Library:CreateWindow(options)
 
         table.insert(Tabs, {Button = TabButton, Page = TabPage})
 
-        -- 切换模块逻辑
         TabButton.MouseButton1Click:Connect(function()
             for _, tabData in pairs(Tabs) do
                 if tabData.Button == TabButton then
@@ -238,12 +262,11 @@ function Library:CreateWindow(options)
 
         local Elements = {}
 
-        -- [1] 文本/标签
         function Elements:CreateLabel(text)
             local LabelFrame = Instance.new("Frame")
             LabelFrame.Size = UDim2.new(1, 0, 0, 30)
             LabelFrame.BackgroundColor3 = Color3.fromRGB(245, 245, 245)
-            LabelFrame.BackgroundTransparency = 0.2
+            LabelFrame.BackgroundTransparency = 0.1
             LabelFrame.Parent = TabPage
             AddCorner(LabelFrame, 8)
 
@@ -259,12 +282,11 @@ function Library:CreateWindow(options)
             Label.Parent = LabelFrame
         end
 
-        -- [2] 普通按钮
         function Elements:CreateButton(text, callback)
             local Button = Instance.new("TextButton")
             Button.Size = UDim2.new(1, 0, 0, 35)
             Button.BackgroundColor3 = Color3.fromRGB(230, 230, 230)
-            Button.BackgroundTransparency = 0.1
+            Button.BackgroundTransparency = 0.05
             Button.Text = text
             Button.TextColor3 = Color3.fromRGB(30, 30, 30)
             Button.Font = Enum.Font.GothamSemibold
@@ -283,7 +305,7 @@ function Library:CreateWindow(options)
                 TweenService:Create(Button, TweenInfo.new(0.2), {
                     BackgroundColor3 = Color3.fromRGB(230, 230, 230),
                     TextColor3 = Color3.fromRGB(30, 30, 30),
-                    BackgroundTransparency = 0.1
+                    BackgroundTransparency = 0.05
                 }):Play()
             end)
 
@@ -292,13 +314,12 @@ function Library:CreateWindow(options)
             end)
         end
 
-        -- [3] 开关 Toggle
         function Elements:CreateToggle(text, default, callback)
             local toggled = default or false
             local ToggleFrame = Instance.new("Frame")
             ToggleFrame.Size = UDim2.new(1, 0, 0, 35)
             ToggleFrame.BackgroundColor3 = Color3.fromRGB(245, 245, 245)
-            ToggleFrame.BackgroundTransparency = 0.2
+            ToggleFrame.BackgroundTransparency = 0.1
             ToggleFrame.Parent = TabPage
             AddCorner(ToggleFrame, 8)
 
@@ -343,12 +364,11 @@ function Library:CreateWindow(options)
             ToggleBtn.MouseButton1Click:Connect(FireToggle)
         end
 
-        -- [4] 滑块 Slider (完美适配手机触摸与PC鼠标)
         function Elements:CreateSlider(text, min, max, default, callback)
             local SliderFrame = Instance.new("Frame")
             SliderFrame.Size = UDim2.new(1, 0, 0, 50)
             SliderFrame.BackgroundColor3 = Color3.fromRGB(245, 245, 245)
-            SliderFrame.BackgroundTransparency = 0.2
+            SliderFrame.BackgroundTransparency = 0.1
             SliderFrame.Parent = TabPage
             AddCorner(SliderFrame, 8)
 
@@ -367,7 +387,7 @@ function Library:CreateWindow(options)
             BarBackground.Size = UDim2.new(1, -20, 0, 8)
             BarBackground.Position = UDim2.new(0, 10, 0, 30)
             BarBackground.BackgroundColor3 = Color3.fromRGB(200, 200, 200)
-            BarBackground.BackgroundTransparency = 0.3
+            BarBackground.BackgroundTransparency = 0.2
             BarBackground.Parent = SliderFrame
             AddCorner(BarBackground, 4)
 
