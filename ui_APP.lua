@@ -1,6 +1,7 @@
 --[[
-    精美自适应通用 UI 库 v3.2 (修复版)
+    精美自适应通用 UI 库 v3.3 (弹性动画升级版)
     优化：侧边栏完美自适应、主题切换修复、流畅渐变、文字主题跟随、防误触、通知栏上调
+    新增：悬浮球 Q 弹点击动画、主界面丝滑弹性弹出/收起动画
 ]]
 
 local UserInputService = game:GetService("UserInputService")
@@ -122,7 +123,6 @@ Library.Themes = {
     }
 }
 
--- 默认渐变动画配置
 local warmGrad = Library.Themes.WarmGradient.Gradient
 warmGrad.Color = ColorSequence.new({
     ColorSequenceKeypoint.new(0, Color3.fromRGB(255, 200, 150)),
@@ -138,7 +138,6 @@ function Library:CreateWindow(options)
     local Theme = {}
     local function loadTheme(name)
         local t = Library.Themes[name] or Library.Themes.Default
-        -- 强制遍历 Default 库的键，确保即使切换回没有 Gradient 的主题也能正确覆盖为 nil
         for k, _ in pairs(Library.Themes.Default) do
             Theme[k] = t[k]
         end
@@ -153,17 +152,17 @@ function Library:CreateWindow(options)
 
     local themeUpdateFunctions = {}
 
-    -- 遮罩 (开启防误触机制并调高层级)
+    -- 遮罩 
     local DropdownOverlay = Instance.new("TextButton")
     DropdownOverlay.Size = UDim2.new(1, 0, 1, 0)
     DropdownOverlay.BackgroundTransparency = 1
     DropdownOverlay.Text = ""
     DropdownOverlay.Visible = false
-    DropdownOverlay.Active = true -- 拦截底部点击
+    DropdownOverlay.Active = true 
     DropdownOverlay.ZIndex = 99
     DropdownOverlay.Parent = ScreenGui
 
-    -- 通知容器（位置进一步上移至 Y=5）
+    -- 通知容器
     local NotificationContainer = Instance.new("Frame")
     NotificationContainer.AnchorPoint = Vector2.new(1, 0)
     NotificationContainer.Position = UDim2.new(1, -10, 0, 5)
@@ -173,10 +172,11 @@ function Library:CreateWindow(options)
     NotificationContainer.ZIndex = 10
     NotificationContainer.Parent = ScreenGui
 
-    -- 悬浮球
+    -- 悬浮球 (新增了居中锚点和 UIScale 缩放器)
     local FloatingBall = Instance.new("TextButton")
     FloatingBall.Size = UDim2.new(0, 50, 0, 50)
-    FloatingBall.Position = UDim2.new(0.1, 0, 0.1, 0)
+    FloatingBall.AnchorPoint = Vector2.new(0.5, 0.5) -- 居中，方便缩放动画
+    FloatingBall.Position = UDim2.new(0.1, 25, 0.1, 25) 
     FloatingBall.BackgroundColor3 = Theme.ElementBackground
     FloatingBall.Text = "UI"
     FloatingBall.TextColor3 = Theme.TextColor
@@ -187,13 +187,15 @@ function Library:CreateWindow(options)
     local UIStrokeBall = Instance.new("UIStroke", FloatingBall)
     UIStrokeBall.Color = Theme.Accent
     UIStrokeBall.Thickness = 2
+    local BallScale = Instance.new("UIScale", FloatingBall) -- 控制悬浮球弹性缩放
+
     table.insert(themeUpdateFunctions, function(t)
         FloatingBall.BackgroundColor3 = t.ElementBackground
         FloatingBall.TextColor3 = t.TextColor
         UIStrokeBall.Color = t.Accent
     end)
 
-    -- 主框架
+    -- 主框架 (新增 UIScale 缩放器)
     local MainFrame = Instance.new("Frame")
     MainFrame.AnchorPoint = Vector2.new(0.5, 0.5)
     MainFrame.Position = UDim2.new(0.5, 0, 0.5, 0)
@@ -202,6 +204,8 @@ function Library:CreateWindow(options)
     MainFrame.BorderSizePixel = 0
     MainFrame.ClipsDescendants = true
     MainFrame.Parent = ScreenGui
+    local MainScale = Instance.new("UIScale", MainFrame) -- 控制主界面弹性缩放
+    
     AddCorner(MainFrame, 16)
     local MainStroke = Instance.new("UIStroke", MainFrame)
     MainStroke.Color = Theme.Accent
@@ -257,7 +261,7 @@ function Library:CreateWindow(options)
         TitleLabel.TextColor3 = t.TitleTextColor
     end)
 
-    -- 侧边栏 (使用比例解决超出主体/不适配问题)
+    -- 侧边栏
     local Sidebar = Instance.new("Frame")
     Sidebar.Size = UDim2.new(0.28, 0, 1, -40)
     Sidebar.Position = UDim2.new(0, 0, 0, 40)
@@ -298,7 +302,7 @@ function Library:CreateWindow(options)
         SideDivider.BackgroundColor3 = t.DividerColor
     end)
 
-    -- 内容区 (同步比例)
+    -- 内容区
     local ContentContainer = Instance.new("Frame")
     ContentContainer.Size = UDim2.new(0.72, 0, 1, -40)
     ContentContainer.Position = UDim2.new(0.28, 0, 0, 40)
@@ -308,9 +312,44 @@ function Library:CreateWindow(options)
     MakeDraggable(TopBar, MainFrame)
     MakeDraggable(FloatingBall, FloatingBall)
 
+    -- >>> 新增：弹性展开/收回的核心逻辑 <<<
+    local isUiOpen = true
+    local isAnimating = false
+
     FloatingBall.MouseButton1Click:Connect(function()
-        MainFrame.Visible = not MainFrame.Visible
+        if isAnimating then return end
+        isAnimating = true
+
+        -- 1. 悬浮球 Q 弹按压效果
+        local pressTween = TweenService:Create(BallScale, TweenInfo.new(0.1, Enum.EasingStyle.Sine, Enum.EasingDirection.Out), {Scale = 0.8})
+        pressTween:Play()
+        pressTween.Completed:Wait()
+        TweenService:Create(BallScale, TweenInfo.new(0.3, Enum.EasingStyle.Back, Enum.EasingDirection.Out), {Scale = 1}):Play()
+
+        isUiOpen = not isUiOpen
+
+        -- 2. 主界面弹性开关动画
+        if isUiOpen then
+            MainFrame.Visible = true
+            MainScale.Scale = 0 -- 从 0 开始放大
+            local openTween = TweenService:Create(MainScale, TweenInfo.new(0.4, Enum.EasingStyle.Back, Enum.EasingDirection.Out), {Scale = 1})
+            openTween:Play()
+            openTween.Completed:Connect(function()
+                isAnimating = false
+            end)
+        else
+            -- 收起时用 Back In 效果
+            local closeTween = TweenService:Create(MainScale, TweenInfo.new(0.3, Enum.EasingStyle.Back, Enum.EasingDirection.In), {Scale = 0})
+            closeTween:Play()
+            closeTween.Completed:Connect(function()
+                if not isUiOpen then
+                    MainFrame.Visible = false
+                end
+                isAnimating = false
+            end)
+        end
     end)
+    -- >>> 弹性动画逻辑结束 <<<
 
     local Window = {}
     local Tabs = {}
@@ -318,7 +357,6 @@ function Library:CreateWindow(options)
     local selectedTabButton = nil
     local currentDropdown = nil
 
-    -- 关闭下拉
     local function closeDropdown()
         if currentDropdown then
             currentDropdown.list:Destroy()
@@ -328,7 +366,6 @@ function Library:CreateWindow(options)
         end
     end
 
-    -- 渐变动画管理 (使用更稳定的 RenderStepped)
     local gradientAnimConn
     local function stopGradientAnimation()
         if gradientAnimConn then
@@ -346,9 +383,8 @@ function Library:CreateWindow(options)
         end)
     end
 
-    -- 主题应用
     function Window:ApplyTheme(themeName)
-        closeDropdown() -- 防止改变主题时导致已打开的菜单不同步
+        closeDropdown() 
         loadTheme(themeName)
         
         for _, child in ipairs(MainFrame:GetChildren()) do
@@ -375,7 +411,6 @@ function Library:CreateWindow(options)
         end
     end
 
-    -- 通知
     local currentNotification = nil
     function Window:Notify(title, message, duration)
         title = title or "通知"
@@ -428,7 +463,6 @@ function Library:CreateWindow(options)
         end)
     end
 
-    -- 标签页
     function Window:CreateTab(TabName)
         local TabButton = Instance.new("TextButton")
         TabButton.Name = TabName
@@ -498,7 +532,6 @@ function Library:CreateWindow(options)
 
         local Elements = {}
 
-        -- 标签
         function Elements:CreateLabel(text)
             local LabelFrame = Instance.new("Frame")
             LabelFrame.Size = UDim2.new(1, 0, 0, 30)
@@ -521,7 +554,6 @@ function Library:CreateWindow(options)
             end)
         end
 
-        -- 按钮
         function Elements:CreateButton(text, callback)
             local Button = Instance.new("TextButton")
             Button.Size = UDim2.new(1, 0, 0, 35)
@@ -558,7 +590,6 @@ function Library:CreateWindow(options)
             end)
         end
 
-        -- 开关
         function Elements:CreateToggle(text, default, callback)
             local toggled = default or false
             local ToggleFrame = Instance.new("Frame")
@@ -606,7 +637,6 @@ function Library:CreateWindow(options)
             ToggleBtn.MouseButton1Click:Connect(FireToggle)
         end
 
-        -- 滑块 (修复了文字主题不跟随的问题)
         function Elements:CreateSlider(text, min, max, default, callback)
             local SliderFrame = Instance.new("Frame")
             SliderFrame.Size = UDim2.new(1, 0, 0, 50)
@@ -672,7 +702,6 @@ function Library:CreateWindow(options)
             end)
         end
 
-        -- 信息面板
         function Elements:CreateInfoPanel(info)
             local panel = Instance.new("Frame")
             panel.Size = UDim2.new(1, 0, 0, 80)
@@ -737,7 +766,6 @@ function Library:CreateWindow(options)
             return panel
         end
 
-        -- 下拉菜单 (防误触升级优化)
         function Elements:CreateDropdown(text, options, default, callback)
             if type(options) ~= "table" or #options == 0 then return end
             local selected = default or options[1]
@@ -783,7 +811,7 @@ function Library:CreateWindow(options)
                 list.Name = "DropdownList"
                 list.BackgroundColor3 = Theme.ElementBackground
                 list.BorderSizePixel = 0
-                list.ZIndex = 100 -- 高层级置顶显示
+                list.ZIndex = 100 
                 list.Parent = ScreenGui
                 AddCorner(list, 8)
                 local layout = Instance.new("UIListLayout")
@@ -796,7 +824,7 @@ function Library:CreateWindow(options)
                     optBtn.Text = opt
                     optBtn.Font = Enum.Font.Gotham
                     optBtn.TextSize = 13
-                    optBtn.ZIndex = 101 -- 高层级置顶显示
+                    optBtn.ZIndex = 101 
                     optBtn.Parent = list
                     AddCorner(optBtn, 4)
                     optBtn.MouseButton1Click:Connect(function()
