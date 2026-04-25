@@ -1,6 +1,6 @@
 --[[
-    精美自适应通用 UI 库 v3.1
-    修复：导航栏缝隙、文本未跟随主题、渐变动画
+    精美自适应通用 UI 库 v3.2
+    优化：侧边栏底部自然圆角、通知位置上调
 ]]
 
 local UserInputService = game:GetService("UserInputService")
@@ -15,7 +15,6 @@ if not targetGui:FindFirstChild("RobloxGui") and not pcall(function() return Cor
     targetGui = Players.LocalPlayer:WaitForChild("PlayerGui")
 end
 
--- 工具
 local function MakeDraggable(dragArea, moveObject)
     local dragging, dragInput, dragStart, startPos
     dragArea.InputBegan:Connect(function(input)
@@ -118,7 +117,7 @@ Library.Themes = {
     }
 }
 
--- 配置默认渐变动画参数
+-- 默认渐变动画配置
 local warmGrad = Library.Themes.WarmGradient.Gradient
 warmGrad.Color = ColorSequence.new({
     ColorSequenceKeypoint.new(0, Color3.fromRGB(255, 200, 150)),
@@ -155,10 +154,10 @@ function Library:CreateWindow(options)
     DropdownOverlay.ZIndex = 5
     DropdownOverlay.Parent = ScreenGui
 
-    -- 通知容器
+    -- 通知容器（位置上移至 Y=15）
     local NotificationContainer = Instance.new("Frame")
     NotificationContainer.AnchorPoint = Vector2.new(1, 0)
-    NotificationContainer.Position = UDim2.new(1, -10, 0, 50)
+    NotificationContainer.Position = UDim2.new(1, -10, 0, 15)
     NotificationContainer.Size = UDim2.new(0, 250, 1, -60)
     NotificationContainer.BackgroundTransparency = 1
     NotificationContainer.ClipsDescendants = false
@@ -185,7 +184,7 @@ function Library:CreateWindow(options)
         UIStrokeBall.Color = t.Accent
     end)
 
-    -- 主框架（无缝隙设计）
+    -- 主框架
     local MainFrame = Instance.new("Frame")
     MainFrame.AnchorPoint = Vector2.new(0.5, 0.5)
     MainFrame.Position = UDim2.new(0.5, 0, 0.5, 0)
@@ -249,29 +248,22 @@ function Library:CreateWindow(options)
         TitleLabel.TextColor3 = t.TitleTextColor
     end)
 
-    -- 侧边栏（完全填充，无间隙）
+    -- 侧边栏（移除 BottomFill，保留自然圆角）
     local Sidebar = Instance.new("Frame")
     Sidebar.Size = UDim2.new(0, 130, 1, -40)
     Sidebar.Position = UDim2.new(0, 0, 0, 40)
     Sidebar.BackgroundColor3 = Theme.SidebarBackground
     Sidebar.BorderSizePixel = 0
     Sidebar.Parent = MainFrame
-    -- 覆盖圆角底部
     local SidebarCorner = Instance.new("UICorner", Sidebar)
     SidebarCorner.CornerRadius = UDim.new(0, 16)
+    -- 仅覆盖右侧圆角
     local RightHideFrame = Instance.new("Frame")
     RightHideFrame.Size = UDim2.new(0.5, 0, 1, 0)
     RightHideFrame.Position = UDim2.new(0.5, 0, 0, 0)
     RightHideFrame.BackgroundColor3 = Theme.SidebarBackground
     RightHideFrame.BorderSizePixel = 0
     RightHideFrame.Parent = Sidebar
-    -- 底部分隔线用透明框架补全
-    local BottomFill = Instance.new("Frame")
-    BottomFill.Size = UDim2.new(1, 0, 0, 8)
-    BottomFill.Position = UDim2.new(0, 0, 1, -8)
-    BottomFill.BackgroundColor3 = Theme.SidebarBackground
-    BottomFill.BorderSizePixel = 0
-    BottomFill.Parent = Sidebar
 
     local SideDivider = Instance.new("Frame")
     SideDivider.Size = UDim2.new(0, 1, 1, 0)
@@ -295,7 +287,6 @@ function Library:CreateWindow(options)
     table.insert(themeUpdateFunctions, function(t)
         Sidebar.BackgroundColor3 = t.SidebarBackground
         RightHideFrame.BackgroundColor3 = t.SidebarBackground
-        BottomFill.BackgroundColor3 = t.SidebarBackground
         SideDivider.BackgroundColor3 = t.DividerColor
     end)
 
@@ -329,7 +320,7 @@ function Library:CreateWindow(options)
         end
     end
 
-    -- ========== 渐变动画管理 ==========
+    -- 渐变动画管理
     local gradientAnimThread
     local function startGradientAnimation(grad)
         stopGradientAnimation()
@@ -354,11 +345,8 @@ function Library:CreateWindow(options)
     -- 主题应用
     function Window:ApplyTheme(themeName)
         loadTheme(themeName)
-        -- 更新渐变
         for _, child in ipairs(MainFrame:GetChildren()) do
-            if child:IsA("UIGradient") then
-                child:Destroy()
-            end
+            if child:IsA("UIGradient") then child:Destroy() end
         end
         if Theme.Gradient then
             local newGrad = Theme.Gradient:Clone()
@@ -367,7 +355,6 @@ function Library:CreateWindow(options)
         else
             stopGradientAnimation()
         end
-        -- 执行所有更新函数
         for _, func in ipairs(themeUpdateFunctions) do
             func(Theme)
         end
@@ -375,8 +362,6 @@ function Library:CreateWindow(options)
 
     function Window:SetAccentColor(color)
         Theme.Accent = color
-        self:ApplyTheme("_update")
-        -- 快速刷新主题（不改变名字）
         for _, func in ipairs(themeUpdateFunctions) do
             func(Theme)
         end
@@ -447,9 +432,8 @@ function Library:CreateWindow(options)
         TabButton.TextSize = 14
         TabButton.Parent = TabContainer
         AddCorner(TabButton, 8)
-        -- 补充文本更新
         table.insert(themeUpdateFunctions, function(t)
-            if selectedTabButton == TabButton then return end -- 选中状态由选中逻辑控制
+            if selectedTabButton == TabButton then return end
             TabButton.TextColor3 = t.TextColor
             TabButton.BackgroundColor3 = Color3.fromRGB(230, 230, 230)
         end)
@@ -847,7 +831,6 @@ function Library:CreateWindow(options)
         end
     end
 
-    -- 初始应用默认主题
     Window:ApplyTheme(initialTheme)
 
     return Window
