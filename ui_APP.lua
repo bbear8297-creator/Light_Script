@@ -1,10 +1,11 @@
 --[[
-    精美自适应通用 UI 库 v3.2
-    优化：侧边栏底部自然圆角、通知位置上调
+    精美自适应通用 UI 库 v3.2 (修复版)
+    优化：侧边栏完美自适应、主题切换修复、流畅渐变、文字主题跟随、防误触、通知栏上调
 ]]
 
 local UserInputService = game:GetService("UserInputService")
 local TweenService = game:GetService("TweenService")
+local RunService = game:GetService("RunService")
 local CoreGui = game:GetService("CoreGui")
 local Players = game:GetService("Players")
 
@@ -72,6 +73,7 @@ Library.Themes = {
         MainBackground = Color3.fromRGB(230, 245, 250),
         SidebarBackground = Color3.fromRGB(200, 235, 240),
         ElementBackground = Color3.fromRGB(235, 248, 252),
+        TopBarBackground = Color3.fromRGB(220, 240, 245),
         TextColor = Color3.fromRGB(20, 60, 80),
         TitleTextColor = Color3.fromRGB(15, 45, 60),
         ElementTextColor = Color3.fromRGB(20, 70, 90),
@@ -84,6 +86,7 @@ Library.Themes = {
         MainBackground = Color3.fromRGB(250, 245, 235),
         SidebarBackground = Color3.fromRGB(240, 230, 210),
         ElementBackground = Color3.fromRGB(245, 235, 220),
+        TopBarBackground = Color3.fromRGB(248, 240, 225),
         TextColor = Color3.fromRGB(80, 50, 30),
         TitleTextColor = Color3.fromRGB(60, 40, 20),
         ElementTextColor = Color3.fromRGB(70, 45, 25),
@@ -96,6 +99,7 @@ Library.Themes = {
         MainBackground = Color3.fromRGB(255, 240, 240),
         SidebarBackground = Color3.fromRGB(255, 225, 225),
         ElementBackground = Color3.fromRGB(255, 245, 245),
+        TopBarBackground = Color3.fromRGB(255, 235, 235),
         TextColor = Color3.fromRGB(80, 40, 40),
         TitleTextColor = Color3.fromRGB(60, 20, 20),
         ElementTextColor = Color3.fromRGB(90, 45, 45),
@@ -108,6 +112,7 @@ Library.Themes = {
         MainBackground = Color3.fromRGB(255, 240, 230),
         SidebarBackground = Color3.fromRGB(250, 230, 220),
         ElementBackground = Color3.fromRGB(255, 245, 240),
+        TopBarBackground = Color3.fromRGB(255, 235, 225),
         TextColor = Color3.fromRGB(80, 50, 40),
         TitleTextColor = Color3.fromRGB(60, 30, 20),
         ElementTextColor = Color3.fromRGB(90, 55, 45),
@@ -133,7 +138,10 @@ function Library:CreateWindow(options)
     local Theme = {}
     local function loadTheme(name)
         local t = Library.Themes[name] or Library.Themes.Default
-        for k, v in pairs(t) do Theme[k] = v end
+        -- 强制遍历 Default 库的键，确保即使切换回没有 Gradient 的主题也能正确覆盖为 nil
+        for k, _ in pairs(Library.Themes.Default) do
+            Theme[k] = t[k]
+        end
     end
     loadTheme(initialTheme)
 
@@ -145,19 +153,20 @@ function Library:CreateWindow(options)
 
     local themeUpdateFunctions = {}
 
-    -- 遮罩
+    -- 遮罩 (开启防误触机制并调高层级)
     local DropdownOverlay = Instance.new("TextButton")
     DropdownOverlay.Size = UDim2.new(1, 0, 1, 0)
     DropdownOverlay.BackgroundTransparency = 1
     DropdownOverlay.Text = ""
     DropdownOverlay.Visible = false
-    DropdownOverlay.ZIndex = 5
+    DropdownOverlay.Active = true -- 拦截底部点击
+    DropdownOverlay.ZIndex = 99
     DropdownOverlay.Parent = ScreenGui
 
-    -- 通知容器（位置上移至 Y=15）
+    -- 通知容器（位置进一步上移至 Y=5）
     local NotificationContainer = Instance.new("Frame")
     NotificationContainer.AnchorPoint = Vector2.new(1, 0)
-    NotificationContainer.Position = UDim2.new(1, -10, 0, 15)
+    NotificationContainer.Position = UDim2.new(1, -10, 0, 5)
     NotificationContainer.Size = UDim2.new(0, 250, 1, -60)
     NotificationContainer.BackgroundTransparency = 1
     NotificationContainer.ClipsDescendants = false
@@ -214,7 +223,7 @@ function Library:CreateWindow(options)
     -- 顶部栏
     local TopBar = Instance.new("Frame")
     TopBar.Size = UDim2.new(1, 0, 0, 40)
-    TopBar.BackgroundColor3 = Theme.TopBarBackground
+    TopBar.BackgroundColor3 = Theme.TopBarBackground or Theme.MainBackground
     TopBar.BorderSizePixel = 0
     TopBar.Parent = MainFrame
     local TopBarCorner = Instance.new("UICorner", TopBar)
@@ -222,7 +231,7 @@ function Library:CreateWindow(options)
     local BottomHideFrame = Instance.new("Frame")
     BottomHideFrame.Size = UDim2.new(1, 0, 0.5, 0)
     BottomHideFrame.Position = UDim2.new(0, 0, 0.5, 0)
-    BottomHideFrame.BackgroundColor3 = Theme.TopBarBackground
+    BottomHideFrame.BackgroundColor3 = Theme.TopBarBackground or Theme.MainBackground
     BottomHideFrame.BorderSizePixel = 0
     BottomHideFrame.Parent = TopBar
     local TopDivider = Instance.new("Frame")
@@ -242,22 +251,21 @@ function Library:CreateWindow(options)
     TitleLabel.TextXAlignment = Enum.TextXAlignment.Left
     TitleLabel.Parent = TopBar
     table.insert(themeUpdateFunctions, function(t)
-        TopBar.BackgroundColor3 = t.TopBarBackground
-        BottomHideFrame.BackgroundColor3 = t.TopBarBackground
+        TopBar.BackgroundColor3 = t.TopBarBackground or t.MainBackground
+        BottomHideFrame.BackgroundColor3 = t.TopBarBackground or t.MainBackground
         TopDivider.BackgroundColor3 = t.DividerColor
         TitleLabel.TextColor3 = t.TitleTextColor
     end)
 
-    -- 侧边栏（移除 BottomFill，保留自然圆角）
+    -- 侧边栏 (使用比例解决超出主体/不适配问题)
     local Sidebar = Instance.new("Frame")
-    Sidebar.Size = UDim2.new(0, 130, 1, -40)
+    Sidebar.Size = UDim2.new(0.28, 0, 1, -40)
     Sidebar.Position = UDim2.new(0, 0, 0, 40)
     Sidebar.BackgroundColor3 = Theme.SidebarBackground
     Sidebar.BorderSizePixel = 0
     Sidebar.Parent = MainFrame
     local SidebarCorner = Instance.new("UICorner", Sidebar)
     SidebarCorner.CornerRadius = UDim.new(0, 16)
-    -- 仅覆盖右侧圆角
     local RightHideFrame = Instance.new("Frame")
     RightHideFrame.Size = UDim2.new(0.5, 0, 1, 0)
     RightHideFrame.Position = UDim2.new(0.5, 0, 0, 0)
@@ -290,10 +298,10 @@ function Library:CreateWindow(options)
         SideDivider.BackgroundColor3 = t.DividerColor
     end)
 
-    -- 内容区
+    -- 内容区 (同步比例)
     local ContentContainer = Instance.new("Frame")
-    ContentContainer.Size = UDim2.new(1, -130, 1, -40)
-    ContentContainer.Position = UDim2.new(0, 130, 0, 40)
+    ContentContainer.Size = UDim2.new(0.72, 0, 1, -40)
+    ContentContainer.Position = UDim2.new(0.28, 0, 0, 40)
     ContentContainer.BackgroundTransparency = 1
     ContentContainer.Parent = MainFrame
 
@@ -320,34 +328,33 @@ function Library:CreateWindow(options)
         end
     end
 
-    -- 渐变动画管理
-    local gradientAnimThread
+    -- 渐变动画管理 (使用更稳定的 RenderStepped)
+    local gradientAnimConn
+    local function stopGradientAnimation()
+        if gradientAnimConn then
+            gradientAnimConn:Disconnect()
+            gradientAnimConn = nil
+        end
+    end
+    
     local function startGradientAnimation(grad)
         stopGradientAnimation()
         if not grad then return end
-        gradientAnimThread = task.spawn(function()
-            local angle = grad.Rotation or 0
-            while true do
-                if not grad.Parent then break end
-                angle = (angle + 0.3) % 360
-                grad.Rotation = angle
-                task.wait(0.05)
-            end
+        gradientAnimConn = RunService.RenderStepped:Connect(function(dt)
+            if not grad.Parent then stopGradientAnimation() return end
+            grad.Rotation = (grad.Rotation + dt * 45) % 360
         end)
-    end
-    local function stopGradientAnimation()
-        if gradientAnimThread then
-            task.cancel(gradientAnimThread)
-            gradientAnimThread = nil
-        end
     end
 
     -- 主题应用
     function Window:ApplyTheme(themeName)
+        closeDropdown() -- 防止改变主题时导致已打开的菜单不同步
         loadTheme(themeName)
+        
         for _, child in ipairs(MainFrame:GetChildren()) do
             if child:IsA("UIGradient") then child:Destroy() end
         end
+        
         if Theme.Gradient then
             local newGrad = Theme.Gradient:Clone()
             newGrad.Parent = MainFrame
@@ -355,6 +362,7 @@ function Library:CreateWindow(options)
         else
             stopGradientAnimation()
         end
+        
         for _, func in ipairs(themeUpdateFunctions) do
             func(Theme)
         end
@@ -598,7 +606,7 @@ function Library:CreateWindow(options)
             ToggleBtn.MouseButton1Click:Connect(FireToggle)
         end
 
-        -- 滑块
+        -- 滑块 (修复了文字主题不跟随的问题)
         function Elements:CreateSlider(text, min, max, default, callback)
             local SliderFrame = Instance.new("Frame")
             SliderFrame.Size = UDim2.new(1, 0, 0, 50)
@@ -627,7 +635,11 @@ function Library:CreateWindow(options)
             BarFill.BackgroundColor3 = Theme.Accent
             BarFill.Parent = BarBackground
             AddCorner(BarFill, 4)
-            table.insert(themeUpdateFunctions, function(t) BarFill.BackgroundColor3 = t.Accent end)
+            table.insert(themeUpdateFunctions, function(t) 
+                BarFill.BackgroundColor3 = t.Accent
+                SliderFrame.BackgroundColor3 = t.ElementBackground
+                SliderLabel.TextColor3 = t.TextColor 
+            end)
             local SliderButton = Instance.new("TextButton")
             SliderButton.Size = UDim2.new(1, 0, 1, 0)
             SliderButton.BackgroundTransparency = 1
@@ -725,7 +737,7 @@ function Library:CreateWindow(options)
             return panel
         end
 
-        -- 下拉菜单
+        -- 下拉菜单 (防误触升级优化)
         function Elements:CreateDropdown(text, options, default, callback)
             if type(options) ~= "table" or #options == 0 then return end
             local selected = default or options[1]
@@ -771,7 +783,7 @@ function Library:CreateWindow(options)
                 list.Name = "DropdownList"
                 list.BackgroundColor3 = Theme.ElementBackground
                 list.BorderSizePixel = 0
-                list.ZIndex = 10
+                list.ZIndex = 100 -- 高层级置顶显示
                 list.Parent = ScreenGui
                 AddCorner(list, 8)
                 local layout = Instance.new("UIListLayout")
@@ -784,7 +796,7 @@ function Library:CreateWindow(options)
                     optBtn.Text = opt
                     optBtn.Font = Enum.Font.Gotham
                     optBtn.TextSize = 13
-                    optBtn.ZIndex = 10
+                    optBtn.ZIndex = 101 -- 高层级置顶显示
                     optBtn.Parent = list
                     AddCorner(optBtn, 4)
                     optBtn.MouseButton1Click:Connect(function()
