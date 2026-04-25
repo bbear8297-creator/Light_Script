@@ -1,6 +1,7 @@
 --[[
-    精美自适应通用 UI 库 v3.7.1 (主题整体联动 + 图标背景可配)
-    优化：色板取色器联动整套界面配色、悬浮球/标签图标支持自定义背景、快捷键稳定
+    精美自适应通用 UI 库 v3.9 Final (音频/图片/滚动修复)
+    修复：导航栏/内容区无内容时仍可滚动 → 动态限制 CanvasSize
+    新增：通知可被动触发，自动适配无图片/无音效情况
 ]]
 
 local UserInputService = game:GetService("UserInputService")
@@ -108,7 +109,7 @@ Library.Themes = {
 function Library:CreateWindow(options)
     local WindowTitle = options.Title or "Executor UI"
     local initialTheme = options.Theme or "Default"
-    local floatingBallImage = options.FloatingBallImage  -- 可选
+    local floatingBallImage = options.FloatingBallImage
 
     local Theme = {}
     local function loadTheme(name)
@@ -124,6 +125,11 @@ function Library:CreateWindow(options)
     ScreenGui.ResetOnSpawn = false
     ScreenGui.ZIndexBehavior = Enum.ZIndexBehavior.Sibling
     ScreenGui.Parent = targetGui
+
+    -- 全局音效对象
+    local soundObject = Instance.new("Sound")
+    soundObject.Volume = 1
+    soundObject.Parent = ScreenGui
 
     local themeUpdateFunctions = {}
 
@@ -280,6 +286,18 @@ function Library:CreateWindow(options)
     TabListLayout.HorizontalAlignment = Enum.HorizontalAlignment.Center
     TabListLayout.Parent = TabContainer
 
+    -- 修复侧边栏滚动：当内容高度不足时不滚动
+    TabContainer:GetPropertyChangedSignal("CanvasSize"):Connect(function()
+        -- 不主动设置，使用下面逻辑
+    end)
+    local function updateSidebarScroll()
+        local contentHeight = TabListLayout.AbsoluteContentSize.Y
+        local containerHeight = TabContainer.AbsoluteSize.Y
+        TabContainer.CanvasSize = UDim2.new(0, 0, 0, math.max(contentHeight, containerHeight))
+    end
+    TabListLayout:GetPropertyChangedSignal("AbsoluteContentSize"):Connect(updateSidebarScroll)
+    TabContainer:GetPropertyChangedSignal("AbsoluteSize"):Connect(updateSidebarScroll)
+
     table.insert(themeUpdateFunctions, function(t)
         Sidebar.BackgroundColor3 = t.SidebarBackground
         RightHideFrame.BackgroundColor3 = t.SidebarBackground
@@ -309,7 +327,6 @@ function Library:CreateWindow(options)
         TweenService:Create(BallScale, TweenInfo.new(0.3, Enum.EasingStyle.Back, Enum.EasingDirection.Out), {Scale = 1}):Play()
 
         isUiOpen = not isUiOpen
-
         if isUiOpen then
             MainFrame.Visible = true
             MainScale.Scale = 0
@@ -322,9 +339,7 @@ function Library:CreateWindow(options)
             local closeTween = TweenService:Create(MainScale, TweenInfo.new(0.3, Enum.EasingStyle.Back, Enum.EasingDirection.In), {Scale = 0})
             closeTween:Play()
             closeTween.Completed:Connect(function()
-                if not isUiOpen then
-                    MainFrame.Visible = false
-                end
+                if not isUiOpen then MainFrame.Visible = false end
                 isAnimating = false
             end)
         end
@@ -357,7 +372,6 @@ function Library:CreateWindow(options)
         end
     end
 
-    -- 核心：色板联动整套主题
     function Window:SetAccentColor(color)
         local h, s, v = color:ToHSV()
         Theme.Accent = color
@@ -379,14 +393,34 @@ function Library:CreateWindow(options)
         end
     end
 
+    function Window:PlaySound(soundId, volume)
+        volume = volume or 1
+        if not soundId then return end
+        soundObject.SoundId = soundId
+        soundObject.Volume = volume
+        soundObject:Play()
+    end
+
     local currentNotification = nil
-    function Window:Notify(title, message, duration)
-        title = title or "通知"
-        message = message or ""
-        duration = duration or 4
+    function Window:Notify(params)
+        -- 兼容旧写法：Window:Notify(title, message, duration)
+        if type(params) == "string" then
+            params = {Title = params, Message = select(2,...), Duration = select(3,...)}
+        end
+        local title = params.Title or "通知"
+        local message = params.Message or ""
+        local duration = params.Duration or 4
+        local imageId = params.ImageId
+        local soundId = params.SoundId
+
+        if soundId then
+            self:PlaySound(soundId, 1)
+        end
+
         if currentNotification then
             currentNotification:Destroy()
         end
+
         local notifFrame = Instance.new("Frame")
         notifFrame.BackgroundColor3 = Theme.ElementBackground
         notifFrame.Size = UDim2.new(0, 240, 0, 60)
@@ -396,9 +430,21 @@ function Library:CreateWindow(options)
         local stroke = Instance.new("UIStroke", notifFrame)
         stroke.Color = Theme.Accent
         stroke.Thickness = 1
+
+        local textXOffset = 8
+        if imageId then
+            local img = Instance.new("ImageLabel")
+            img.Size = UDim2.new(0, 40, 0, 40)
+            img.Position = UDim2.new(0, 8, 0.5, -20)
+            img.BackgroundTransparency = 1
+            img.Image = imageId
+            img.Parent = notifFrame
+            textXOffset = 56
+        end
+
         local titleLabel = Instance.new("TextLabel")
-        titleLabel.Size = UDim2.new(1, -16, 0, 20)
-        titleLabel.Position = UDim2.new(0, 8, 0, 6)
+        titleLabel.Size = UDim2.new(1, -textXOffset-8, 0, 20)
+        titleLabel.Position = UDim2.new(0, textXOffset, 0, 6)
         titleLabel.BackgroundTransparency = 1
         titleLabel.Text = title
         titleLabel.TextColor3 = Theme.TextColor
@@ -406,9 +452,10 @@ function Library:CreateWindow(options)
         titleLabel.TextSize = 14
         titleLabel.TextXAlignment = Enum.TextXAlignment.Left
         titleLabel.Parent = notifFrame
+
         local msgLabel = Instance.new("TextLabel")
-        msgLabel.Size = UDim2.new(1, -16, 0, 20)
-        msgLabel.Position = UDim2.new(0, 8, 0, 28)
+        msgLabel.Size = UDim2.new(1, -textXOffset-8, 0, 20)
+        msgLabel.Position = UDim2.new(0, textXOffset, 0, 28)
         msgLabel.BackgroundTransparency = 1
         msgLabel.Text = message
         msgLabel.TextColor3 = Theme.TextColor
@@ -417,23 +464,20 @@ function Library:CreateWindow(options)
         msgLabel.TextXAlignment = Enum.TextXAlignment.Left
         msgLabel.TextWrapped = true
         msgLabel.Parent = notifFrame
+
         notifFrame:TweenPosition(UDim2.new(1, -250, 0, 0), "Out", "Quad", 0.3)
         currentNotification = notifFrame
         delay(duration, function()
             if notifFrame and notifFrame.Parent then
                 notifFrame:TweenPosition(UDim2.new(1, 10, 0, 0), "In", "Quad", 0.3)
                 wait(0.3)
-                if currentNotification == notifFrame then
-                    currentNotification = nil
-                end
+                if currentNotification == notifFrame then currentNotification = nil end
                 notifFrame:Destroy()
             end
         end)
     end
 
-    -- 标签页创建（新增图标选项）
     function Window:CreateTab(TabName, iconId, iconOptions)
-        -- iconOptions 表可包含：BackgroundColor3, BackgroundTransparency, ImageColor3, Size
         local TabButton = Instance.new("TextButton")
         TabButton.Name = TabName
         TabButton.Size = UDim2.new(0.9, 0, 0, 30)
@@ -455,9 +499,8 @@ function Library:CreateWindow(options)
         listLayout.Padding = UDim.new(0, 5)
         listLayout.Parent = contentHolder
 
-        -- 图标（可自定义背景）
         if iconId then
-            if type(iconId) == "table" then  -- 兼容旧格式
+            if type(iconId) == "table" then
                 iconOptions = iconId
                 iconId = iconOptions.Image
             end
@@ -468,7 +511,6 @@ function Library:CreateWindow(options)
             end
             icon.Size = defaultSize
             icon.Image = iconId
-            -- 背景设置：默认完全透明，可通过 iconOptions 覆盖
             if iconOptions and iconOptions.BackgroundColor3 then
                 icon.BackgroundColor3 = iconOptions.BackgroundColor3
                 icon.BackgroundTransparency = iconOptions.BackgroundTransparency or 0
@@ -511,9 +553,15 @@ function Library:CreateWindow(options)
         PageLayout.SortOrder = Enum.SortOrder.LayoutOrder
         PageLayout.Padding = UDim.new(0, 8)
         PageLayout.Parent = TabPage
-        PageLayout:GetPropertyChangedSignal("AbsoluteContentSize"):Connect(function()
-            TabPage.CanvasSize = UDim2.new(0, 0, 0, PageLayout.AbsoluteContentSize.Y + 10)
-        end)
+
+        -- 修复内容区滚动：内容不够时不出现滚动条/滚动空间
+        local function updateContentScroll()
+            local contentHeight = PageLayout.AbsoluteContentSize.Y
+            local containerHeight = TabPage.AbsoluteSize.Y
+            TabPage.CanvasSize = UDim2.new(0, 0, 0, math.max(contentHeight + 10, containerHeight))
+        end
+        PageLayout:GetPropertyChangedSignal("AbsoluteContentSize"):Connect(updateContentScroll)
+        TabPage:GetPropertyChangedSignal("AbsoluteSize"):Connect(updateContentScroll)
 
         if FirstTab then
             TabButton.BackgroundColor3 = Theme.Accent
@@ -555,6 +603,7 @@ function Library:CreateWindow(options)
                     end
                 end
             end
+            updateContentScroll() -- 切换后刷新 CanvasSize
         end)
 
         local Elements = {}
@@ -905,7 +954,6 @@ function Library:CreateWindow(options)
             return img
         end
 
-        -- 色板颜色选择器
         function Elements:CreateColorPicker(text, defaultColor, callback)
             local currentColor = defaultColor or Color3.fromRGB(255, 255, 255)
             local pickerFrame = Instance.new("Frame")
@@ -1219,9 +1267,8 @@ function Library:CreateWindow(options)
             conn:Disconnect()
         end
         activeKeybinds = {}
-        if ScreenGui then
-            ScreenGui:Destroy()
-        end
+        if soundObject then soundObject:Destroy() end
+        if ScreenGui then ScreenGui:Destroy() end
     end
 
     Window:ApplyTheme(initialTheme)
