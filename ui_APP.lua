@@ -1,11 +1,11 @@
 --[[
-    精美自适应通用 UI 库 v3.5 (色板取色器升级版)
-    优化：移除渐变系统、新增色板颜色选择器、主题背景跟随、修复取色体验
+    精美自适应通用 UI 库 v3.6 (悬浮球/图标/快捷键/取色器全面升级)
+    优化：背景完整跟随主题、快捷键稳定可靠、悬浮球支持图片(可选)、标签页支持图标(可选)
+    默认：无图片时悬浮球显示"UI"，标签栏只显示文字
 ]]
 
 local UserInputService = game:GetService("UserInputService")
 local TweenService = game:GetService("TweenService")
-local RunService = game:GetService("RunService")
 local CoreGui = game:GetService("CoreGui")
 local Players = game:GetService("Players")
 
@@ -53,7 +53,7 @@ local function AddCorner(parent, radius)
     return corner
 end
 
--- ========== 内置主题库（已移除渐变） ==========
+-- ========== 内置主题库（无渐变） ==========
 Library.Themes = {
     Default = {
         Accent = Color3.fromRGB(85, 170, 255),
@@ -65,8 +65,7 @@ Library.Themes = {
         TitleTextColor = Color3.fromRGB(30, 30, 30),
         ElementTextColor = Color3.fromRGB(30, 30, 30),
         ToggleOffColor = Color3.fromRGB(180, 180, 180),
-        DividerColor = Color3.fromRGB(220, 220, 220),
-        Gradient = nil
+        DividerColor = Color3.fromRGB(220, 220, 220)
     },
     Ocean = {
         Accent = Color3.fromRGB(0, 180, 180),
@@ -78,8 +77,7 @@ Library.Themes = {
         TitleTextColor = Color3.fromRGB(15, 45, 60),
         ElementTextColor = Color3.fromRGB(20, 70, 90),
         ToggleOffColor = Color3.fromRGB(170, 210, 220),
-        DividerColor = Color3.fromRGB(180, 215, 225),
-        Gradient = nil
+        DividerColor = Color3.fromRGB(180, 215, 225)
     },
     Autumn = {
         Accent = Color3.fromRGB(255, 140, 0),
@@ -91,8 +89,7 @@ Library.Themes = {
         TitleTextColor = Color3.fromRGB(60, 40, 20),
         ElementTextColor = Color3.fromRGB(70, 45, 25),
         ToggleOffColor = Color3.fromRGB(200, 180, 160),
-        DividerColor = Color3.fromRGB(210, 190, 170),
-        Gradient = nil
+        DividerColor = Color3.fromRGB(210, 190, 170)
     },
     Sunset = {
         Accent = Color3.fromRGB(255, 80, 100),
@@ -104,15 +101,15 @@ Library.Themes = {
         TitleTextColor = Color3.fromRGB(60, 20, 20),
         ElementTextColor = Color3.fromRGB(90, 45, 45),
         ToggleOffColor = Color3.fromRGB(220, 190, 190),
-        DividerColor = Color3.fromRGB(230, 210, 210),
-        Gradient = nil
+        DividerColor = Color3.fromRGB(230, 210, 210)
     }
 }
 
 -- ========== 创建窗口 ==========
 function Library:CreateWindow(options)
-    local WindowTitle = options.Title or "My Executor UI"
+    local WindowTitle = options.Title or "Executor UI"
     local initialTheme = options.Theme or "Default"
+    local floatingBallImage = options.FloatingBallImage  -- 可选：悬浮球图片ID
 
     local Theme = {}
     local function loadTheme(name)
@@ -131,13 +128,13 @@ function Library:CreateWindow(options)
 
     local themeUpdateFunctions = {}
 
-    -- 遮罩 
+    -- 遮罩
     local DropdownOverlay = Instance.new("TextButton")
     DropdownOverlay.Size = UDim2.new(1, 0, 1, 0)
     DropdownOverlay.BackgroundTransparency = 1
     DropdownOverlay.Text = ""
     DropdownOverlay.Visible = false
-    DropdownOverlay.Active = true 
+    DropdownOverlay.Active = true
     DropdownOverlay.ZIndex = 99
     DropdownOverlay.Parent = ScreenGui
 
@@ -151,16 +148,25 @@ function Library:CreateWindow(options)
     NotificationContainer.ZIndex = 10
     NotificationContainer.Parent = ScreenGui
 
-    -- 悬浮球
-    local FloatingBall = Instance.new("TextButton")
+    -- 悬浮球（优先图片，其次文字“UI”）
+    local FloatingBall
+    if floatingBallImage then
+        FloatingBall = Instance.new("ImageButton")
+        FloatingBall.Image = floatingBallImage
+        FloatingBall.BackgroundTransparency = 1
+    else
+        FloatingBall = Instance.new("TextButton")
+        FloatingBall.Text = "UI"
+        FloatingBall.TextColor3 = Theme.TextColor
+        FloatingBall.Font = Enum.Font.GothamBold
+        FloatingBall.TextSize = 18
+    end
     FloatingBall.Size = UDim2.new(0, 50, 0, 50)
     FloatingBall.AnchorPoint = Vector2.new(0.5, 0.5)
-    FloatingBall.Position = UDim2.new(0.1, 25, 0.1, 25) 
-    FloatingBall.BackgroundColor3 = Theme.ElementBackground
-    FloatingBall.Text = "UI"
-    FloatingBall.TextColor3 = Theme.TextColor
-    FloatingBall.Font = Enum.Font.GothamBold
-    FloatingBall.TextSize = 18
+    FloatingBall.Position = UDim2.new(0.1, 25, 0.1, 25)
+    if not floatingBallImage then
+        FloatingBall.BackgroundColor3 = Theme.ElementBackground
+    end
     FloatingBall.Parent = ScreenGui
     AddCorner(FloatingBall, 25)
     local UIStrokeBall = Instance.new("UIStroke", FloatingBall)
@@ -169,8 +175,10 @@ function Library:CreateWindow(options)
     local BallScale = Instance.new("UIScale", FloatingBall)
 
     table.insert(themeUpdateFunctions, function(t)
-        FloatingBall.BackgroundColor3 = t.ElementBackground
-        FloatingBall.TextColor3 = t.TextColor
+        if not floatingBallImage then
+            FloatingBall.BackgroundColor3 = t.ElementBackground
+            FloatingBall.TextColor3 = t.TextColor
+        end
         UIStrokeBall.Color = t.Accent
     end)
 
@@ -184,7 +192,7 @@ function Library:CreateWindow(options)
     MainFrame.ClipsDescendants = true
     MainFrame.Parent = ScreenGui
     local MainScale = Instance.new("UIScale", MainFrame)
-    
+
     AddCorner(MainFrame, 16)
     local MainStroke = Instance.new("UIStroke", MainFrame)
     MainStroke.Color = Theme.Accent
@@ -194,6 +202,7 @@ function Library:CreateWindow(options)
     SizeConstraint.MaxSize = Vector2.new(650, 400)
     SizeConstraint.MinSize = Vector2.new(300, 250)
     SizeConstraint.Parent = MainFrame
+
     table.insert(themeUpdateFunctions, function(t)
         MainFrame.BackgroundColor3 = t.MainBackground
         MainStroke.Color = t.Accent
@@ -202,7 +211,7 @@ function Library:CreateWindow(options)
     -- 顶部栏
     local TopBar = Instance.new("Frame")
     TopBar.Size = UDim2.new(1, 0, 0, 40)
-    TopBar.BackgroundColor3 = Theme.TopBarBackground or Theme.MainBackground
+    TopBar.BackgroundColor3 = Theme.TopBarBackground
     TopBar.BorderSizePixel = 0
     TopBar.Parent = MainFrame
     local TopBarCorner = Instance.new("UICorner", TopBar)
@@ -210,7 +219,7 @@ function Library:CreateWindow(options)
     local BottomHideFrame = Instance.new("Frame")
     BottomHideFrame.Size = UDim2.new(1, 0, 0.5, 0)
     BottomHideFrame.Position = UDim2.new(0, 0, 0.5, 0)
-    BottomHideFrame.BackgroundColor3 = Theme.TopBarBackground or Theme.MainBackground
+    BottomHideFrame.BackgroundColor3 = Theme.TopBarBackground
     BottomHideFrame.BorderSizePixel = 0
     BottomHideFrame.Parent = TopBar
     local TopDivider = Instance.new("Frame")
@@ -229,9 +238,10 @@ function Library:CreateWindow(options)
     TitleLabel.TextSize = 16
     TitleLabel.TextXAlignment = Enum.TextXAlignment.Left
     TitleLabel.Parent = TopBar
+
     table.insert(themeUpdateFunctions, function(t)
-        TopBar.BackgroundColor3 = t.TopBarBackground or t.MainBackground
-        BottomHideFrame.BackgroundColor3 = t.TopBarBackground or t.MainBackground
+        TopBar.BackgroundColor3 = t.TopBarBackground
+        BottomHideFrame.BackgroundColor3 = t.TopBarBackground
         TopDivider.BackgroundColor3 = t.DividerColor
         TitleLabel.TextColor3 = t.TitleTextColor
     end)
@@ -287,14 +297,13 @@ function Library:CreateWindow(options)
     MakeDraggable(TopBar, MainFrame)
     MakeDraggable(FloatingBall, FloatingBall)
 
-    -- >>> 弹性展开/收回 <<<
+    -- 弹性展开/收回
     local isUiOpen = true
     local isAnimating = false
 
     FloatingBall.MouseButton1Click:Connect(function()
         if isAnimating then return end
         isAnimating = true
-
         local pressTween = TweenService:Create(BallScale, TweenInfo.new(0.1, Enum.EasingStyle.Sine, Enum.EasingDirection.Out), {Scale = 0.8})
         pressTween:Play()
         pressTween.Completed:Wait()
@@ -327,6 +336,7 @@ function Library:CreateWindow(options)
     local FirstTab = true
     local selectedTabButton = nil
     local currentDropdown = nil
+    local activeKeybinds = {}
 
     local function closeDropdown()
         if currentDropdown then
@@ -338,8 +348,11 @@ function Library:CreateWindow(options)
     end
 
     function Window:ApplyTheme(themeName)
-        closeDropdown() 
+        closeDropdown()
         loadTheme(themeName)
+        for _, child in ipairs(MainFrame:GetChildren()) do
+            if child:IsA("UIGradient") then child:Destroy() end
+        end
         for _, func in ipairs(themeUpdateFunctions) do
             func(Theme)
         end
@@ -404,20 +417,52 @@ function Library:CreateWindow(options)
         end)
     end
 
-    function Window:CreateTab(TabName)
+    function Window:CreateTab(TabName, iconId)
         local TabButton = Instance.new("TextButton")
         TabButton.Name = TabName
         TabButton.Size = UDim2.new(0.9, 0, 0, 30)
         TabButton.BackgroundColor3 = Color3.fromRGB(230, 230, 230)
-        TabButton.Text = TabName
-        TabButton.TextColor3 = Theme.TextColor
-        TabButton.Font = Enum.Font.GothamSemibold
-        TabButton.TextSize = 14
+        TabButton.Text = ""
         TabButton.Parent = TabContainer
         AddCorner(TabButton, 8)
+
+        -- 内容容器（图标 + 文字）
+        local contentHolder = Instance.new("Frame")
+        contentHolder.Size = UDim2.new(1, -10, 1, 0)
+        contentHolder.Position = UDim2.new(0, 5, 0, 0)
+        contentHolder.BackgroundTransparency = 1
+        contentHolder.Parent = TabButton
+
+        local listLayout = Instance.new("UIListLayout")
+        listLayout.FillDirection = Enum.FillDirection.Horizontal
+        listLayout.HorizontalAlignment = Enum.HorizontalAlignment.Left
+        listLayout.VerticalAlignment = Enum.VerticalAlignment.Center
+        listLayout.Padding = UDim.new(0, 5)
+        listLayout.Parent = contentHolder
+
+        -- 图标（如果提供）
+        if iconId then
+            local icon = Instance.new("ImageLabel")
+            icon.Size = UDim2.new(0, 18, 0, 18)
+            icon.Image = iconId
+            icon.BackgroundTransparency = 1
+            icon.Parent = contentHolder
+        end
+
+        -- 文字
+        local tabText = Instance.new("TextLabel")
+        tabText.Size = UDim2.new(1, -10, 1, 0)
+        tabText.BackgroundTransparency = 1
+        tabText.Text = TabName
+        tabText.TextColor3 = Theme.TextColor
+        tabText.Font = Enum.Font.GothamSemibold
+        tabText.TextSize = 14
+        tabText.TextXAlignment = Enum.TextXAlignment.Left
+        tabText.Parent = contentHolder
+
         table.insert(themeUpdateFunctions, function(t)
             if selectedTabButton == TabButton then return end
-            TabButton.TextColor3 = t.TextColor
+            tabText.TextColor3 = t.TextColor
             TabButton.BackgroundColor3 = Color3.fromRGB(230, 230, 230)
         end)
 
@@ -441,7 +486,7 @@ function Library:CreateWindow(options)
 
         if FirstTab then
             TabButton.BackgroundColor3 = Theme.Accent
-            TabButton.TextColor3 = Color3.fromRGB(255, 255, 255)
+            tabText.TextColor3 = Color3.fromRGB(255, 255, 255)
             selectedTabButton = TabButton
             table.insert(themeUpdateFunctions, function(t)
                 if selectedTabButton == TabButton then
@@ -458,22 +503,32 @@ function Library:CreateWindow(options)
                     tabData.Page.Visible = true
                     selectedTabButton = TabButton
                     TweenService:Create(tabData.Button, TweenInfo.new(0.2), {
-                        BackgroundColor3 = Theme.Accent,
-                        TextColor3 = Color3.fromRGB(255, 255, 255)
+                        BackgroundColor3 = Theme.Accent
                     }):Play()
+                    local txt = tabData.Button:FindFirstChildOfClass("Frame"):FindFirstChildOfClass("TextLabel")
+                    if txt then
+                        TweenService:Create(txt, TweenInfo.new(0.2), {
+                            TextColor3 = Color3.fromRGB(255, 255, 255)
+                        }):Play()
+                    end
                 else
                     tabData.Page.Visible = false
                     TweenService:Create(tabData.Button, TweenInfo.new(0.2), {
-                        BackgroundColor3 = Color3.fromRGB(230, 230, 230),
-                        TextColor3 = Theme.TextColor
+                        BackgroundColor3 = Color3.fromRGB(230, 230, 230)
                     }):Play()
+                    local txt = tabData.Button:FindFirstChildOfClass("Frame"):FindFirstChildOfClass("TextLabel")
+                    if txt then
+                        TweenService:Create(txt, TweenInfo.new(0.2), {
+                            TextColor3 = Theme.TextColor
+                        }):Play()
+                    end
                 end
             end
         end)
 
         local Elements = {}
 
-        -- ========== 原有控件（Label/Button/Toggle/Slider/InfoPanel/Dropdown等，保持不变） ==========
+        --- 基础控件 ---
         function Elements:CreateLabel(text)
             local LabelFrame = Instance.new("Frame")
             LabelFrame.Size = UDim2.new(1, 0, 0, 30)
@@ -607,10 +662,10 @@ function Library:CreateWindow(options)
             BarFill.BackgroundColor3 = Theme.Accent
             BarFill.Parent = BarBackground
             AddCorner(BarFill, 4)
-            table.insert(themeUpdateFunctions, function(t) 
+            table.insert(themeUpdateFunctions, function(t)
                 BarFill.BackgroundColor3 = t.Accent
                 SliderFrame.BackgroundColor3 = t.ElementBackground
-                SliderLabel.TextColor3 = t.TextColor 
+                SliderLabel.TextColor3 = t.TextColor
             end)
             local SliderButton = Instance.new("TextButton")
             SliderButton.Size = UDim2.new(1, 0, 1, 0)
@@ -753,7 +808,7 @@ function Library:CreateWindow(options)
                 list.Name = "DropdownList"
                 list.BackgroundColor3 = Theme.ElementBackground
                 list.BorderSizePixel = 0
-                list.ZIndex = 100 
+                list.ZIndex = 100
                 list.Parent = ScreenGui
                 AddCorner(list, 8)
                 local layout = Instance.new("UIListLayout")
@@ -766,7 +821,7 @@ function Library:CreateWindow(options)
                     optBtn.Text = opt
                     optBtn.Font = Enum.Font.Gotham
                     optBtn.TextSize = 13
-                    optBtn.ZIndex = 101 
+                    optBtn.ZIndex = 101
                     optBtn.Parent = list
                     AddCorner(optBtn, 4)
                     optBtn.MouseButton1Click:Connect(function()
@@ -803,8 +858,7 @@ function Library:CreateWindow(options)
             return DropdownFrame
         end
 
-        -- ******************** 新增控件 ********************
-
+        --- 高级控件 ---
         function Elements:CreateImage(imageId, sizeX, sizeY)
             local img = Instance.new("ImageLabel")
             img.Name = "ImageElement"
@@ -820,7 +874,6 @@ function Library:CreateWindow(options)
             return img
         end
 
-        -- 新版色板颜色选择器（画画软件风格）
         function Elements:CreateColorPicker(text, defaultColor, callback)
             local currentColor = defaultColor or Color3.fromRGB(255, 255, 255)
             local pickerFrame = Instance.new("Frame")
@@ -863,7 +916,6 @@ function Library:CreateWindow(options)
             local pickerPopup = nil
             colorPreview.MouseButton1Click:Connect(function()
                 if pickerPopup then pickerPopup:Destroy() end
-                -- 弹出2D色板面板
                 pickerPopup = Instance.new("Frame")
                 pickerPopup.Size = UDim2.new(0, 224, 0, 200)
                 pickerPopup.Position = UDim2.new(0, colorPreview.AbsolutePosition.X - 160, 0, colorPreview.AbsolutePosition.Y + 32)
@@ -876,7 +928,6 @@ function Library:CreateWindow(options)
                 popupStroke.Color = Theme.Accent
                 popupStroke.Thickness = 1
 
-                -- 饱和度/明度选择区（左侧方形）
                 local svBox = Instance.new("ImageButton")
                 svBox.Size = UDim2.new(0, 180, 0, 180)
                 svBox.Position = UDim2.new(0, 8, 0, 8)
@@ -885,7 +936,6 @@ function Library:CreateWindow(options)
                 svBox.Parent = pickerPopup
                 AddCorner(svBox, 4)
 
-                -- 白色渐变（水平：饱和度）
                 local whiteGrad = Instance.new("UIGradient", svBox)
                 whiteGrad.Color = ColorSequence.new({
                     ColorSequenceKeypoint.new(0, Color3.fromRGB(255, 255, 255)),
@@ -896,7 +946,6 @@ function Library:CreateWindow(options)
                     NumberSequenceKeypoint.new(1, 0)
                 })
 
-                -- 黑色渐变（垂直：明度）
                 local blackGrad = Instance.new("UIGradient", svBox)
                 blackGrad.Color = ColorSequence.new({
                     ColorSequenceKeypoint.new(0, Color3.fromRGB(0, 0, 0)),
@@ -907,7 +956,6 @@ function Library:CreateWindow(options)
                     NumberSequenceKeypoint.new(1, 1)
                 })
 
-                -- 色相条（右侧）
                 local hueBar = Instance.new("ImageButton")
                 hueBar.Size = UDim2.new(0, 22, 0, 180)
                 hueBar.Position = UDim2.new(0, 194, 0, 8)
@@ -928,7 +976,6 @@ function Library:CreateWindow(options)
                 })
                 hueGrad.Rotation = 90
 
-                -- 选择指示器（小白圈）
                 local svIndicator = Instance.new("Frame")
                 svIndicator.Size = UDim2.new(0, 10, 0, 10)
                 svIndicator.AnchorPoint = Vector2.new(0.5, 0.5)
@@ -946,7 +993,6 @@ function Library:CreateWindow(options)
                 hueIndicator.BorderSizePixel = 1
                 hueIndicator.Parent = hueBar
 
-                -- 从当前颜色计算初始 SV/Hue 位置
                 local h, s, v = currentColor:ToHSV()
                 svIndicator.Position = UDim2.new(s, 0, 1-v, 0)
                 hueIndicator.Position = UDim2.new(0, 0, h, 0)
@@ -954,7 +1000,6 @@ function Library:CreateWindow(options)
                 local svDragging = false
                 local hueDragging = false
 
-                -- 更新显示颜色回调
                 local function updateCurrentColor()
                     svBox.BackgroundColor3 = Color3.fromHSV(h, 1, 1)
                     local newColor = Color3.fromHSV(h, s, v)
@@ -963,7 +1008,6 @@ function Library:CreateWindow(options)
                     pcall(callback, currentColor)
                 end
 
-                -- SV 框交互
                 local function updateSV(input)
                     local relX = math.clamp(input.Position.X - svBox.AbsolutePosition.X, 0, svBox.AbsoluteSize.X) / svBox.AbsoluteSize.X
                     local relY = math.clamp(input.Position.Y - svBox.AbsolutePosition.Y, 0, svBox.AbsoluteSize.Y) / svBox.AbsoluteSize.Y
@@ -980,7 +1024,6 @@ function Library:CreateWindow(options)
                     end
                 end)
 
-                -- 色相条交互
                 local function updateHue(input)
                     local relY = math.clamp(input.Position.Y - hueBar.AbsolutePosition.Y, 0, hueBar.AbsoluteSize.Y) / hueBar.AbsoluteSize.Y
                     h = relY
@@ -1009,7 +1052,6 @@ function Library:CreateWindow(options)
                     end
                 end)
 
-                -- 确认关闭按钮
                 local closeBtn = Instance.new("TextButton")
                 closeBtn.Size = UDim2.new(1, -16, 0, 26)
                 closeBtn.Position = UDim2.new(0, 8, 0, 168)
@@ -1024,7 +1066,7 @@ function Library:CreateWindow(options)
                     pickerPopup:Destroy()
                     pickerPopup = nil
                 end)
-                -- 点击遮罩也可关闭
+
                 local closeConn
                 closeConn = DropdownOverlay.MouseButton1Click:Connect(function()
                     if pickerPopup then
@@ -1076,28 +1118,43 @@ function Library:CreateWindow(options)
             table.insert(themeUpdateFunctions, apply)
 
             local listening = false
-            bindButton.MouseButton1Click:Connect(function()
+            local listenConn
+
+            local function startListening()
                 if listening then return end
                 listening = true
-                bindButton.Text = "..." 
-                local conn
-                conn = UserInputService.InputBegan:Connect(function(input, gameProcessed)
+                bindButton.Text = "..."
+                listenConn = UserInputService.InputBegan:Connect(function(input, gameProcessed)
                     if gameProcessed then return end
                     if input.UserInputType == Enum.UserInputType.Keyboard then
                         currentKey = input.KeyCode
                         bindButton.Text = currentKey.Name
                         listening = false
-                        conn:Disconnect()
-                        pcall(callback, currentKey)
+                        if listenConn then
+                            listenConn:Disconnect()
+                            listenConn = nil
+                        end
+                        local old = activeKeybinds[text]
+                        if old then old:Disconnect() end
+                        activeKeybinds[text] = UserInputService.InputBegan:Connect(function(inp, gp)
+                            if not gp and inp.KeyCode == currentKey then
+                                pcall(callback, currentKey)
+                            end
+                        end)
                     end
                 end)
-            end)
+            end
 
-            UserInputService.InputBegan:Connect(function(input, gameProcessed)
-                if not gameProcessed and input.KeyCode == currentKey then
+            bindButton.MouseButton1Click:Connect(startListening)
+
+            local old = activeKeybinds[text]
+            if old then old:Disconnect() end
+            activeKeybinds[text] = UserInputService.InputBegan:Connect(function(inp, gp)
+                if not gp and inp.KeyCode == currentKey then
                     pcall(callback, currentKey)
                 end
             end)
+
             return keybindFrame
         end
 
@@ -1129,6 +1186,10 @@ function Library:CreateWindow(options)
     end
 
     function Window:Destroy()
+        for _, conn in pairs(activeKeybinds) do
+            conn:Disconnect()
+        end
+        activeKeybinds = {}
         if ScreenGui then
             ScreenGui:Destroy()
         end
