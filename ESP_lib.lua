@@ -1,430 +1,435 @@
+--[[
+    High-Performance ESP Library v1.0
+    Supported for Universal & Dynamic games (e.g., Doors)
+]]
 
-local ESP = {}
 local Players = game:GetService("Players")
 local RunService = game:GetService("RunService")
+local CoreGui = game:GetService("CoreGui")
+
 local LocalPlayer = Players.LocalPlayer
 
--- 配置
-local CONFIG = {
-    ShowName = true,           -- 玩家显示名称
-    ShowHealth = true,         -- 玩家显示血量
-    TeamColor = true,          -- 玩家根据队伍上色
-    CustomColor = nil,         -- 全局自定义颜色
-    MaxDistance = 150,         -- 文本面板最远可见距离
-    UpdateInterval = 0.2,      -- 血量/文本刷新间隔
-    ConditionCheckInterval = 1.0, -- 条件检查间隔（秒），避免频繁遍历
-    HealthGetter = nil,        -- 自定义血量获取函数
+-- 创建安全容器
+local espContainer = Instance.new("Folder")
+espContainer.Name = "ESP_Container"
+local success = pcall(function() espContainer.Parent = CoreGui end)
+if not success then 
+    espContainer.Parent = LocalPlayer:WaitForChild("PlayerGui") 
+end
+
+local ESP = {
+    _enabled = false,
+    Settings = {
+        ShowName = true,
+        ShowHealth = true,
+        ShowRay = false,
+        Color = Color3.fromRGB(255, 255, 255),
+        UseTeamColor = false,
+        MaxDistance = 1000,
+        UpdateInterval = 0.3,
+        ConditionInterval = 1.0,
+        HealthGetter = nil,
+    },
+    activePlayers = {},
+    activeObjects = {},
+    connections = {}
 }
 
--- 内部数据
-local activePlayers = {}       -- [player] = {highlight, billboard, ...}
-local activeObjects = {}       -- [instance] = {highlight, billboard, conditionFunc, ...}
-local updateConnection = nil
-local lastUpdateTime = 0
-local lastConditionCheck = 0
+-- ==========================================
+-- 内部辅助函数
+-- ==========================================
 
--- ==================== 辅助函数 ====================
-local function getColor(instance)
-    if CONFIG.CustomColor then return CONFIG.CustomColor end
-    if CONFIG.TeamColor and instance:IsA("Player") and instance.Team then
-        return instance.Team.TeamColor.Color
-    end
-    return Color3.fromRGB(255, 50, 50)
+-- 获取有效根部件
+local function GetRoot(characterOrModel)
+    if not characterOrModel then return nil end
+    return characterOrModel:FindFirstChild("HumanoidRootPart") 
+        or characterOrModel:FindFirstChild("Head") 
+        or characterOrModel:FindFirstChildWhichIsA("BasePart")
 end
 
-local function getRootPart(instance)
-    if instance:IsA("Player") and instance.Character then
-        return instance.Character:FindFirstChild("HumanoidRootPart") 
-            or instance.Character.PrimaryPart 
-            or instance.Character:FindFirstChild("Head")
-    elseif instance:IsA("Model") then
-        return instance.PrimaryPart or instance:FindFirstChildWhichIsA("BasePart")
-    elseif instance:IsA("BasePart") then
-        return instance
+-- 获取本地玩家射线起点 Attachment
+local localAttachment = nil
+local function GetLocalAttachment()
+    local root = GetRoot(LocalPlayer.Character)
+    if not root then return nil end
+    if not localAttachment or not localAttachment.Parent then
+        localAttachment = Instance.new("Attachment")
+        localAttachment.Name = "ESP_LocalAttachment"
+        localAttachment.Parent = root
     end
-    return nil
+    return localAttachment
 end
 
-local function getHealth(instance)
-    if CONFIG.HealthGetter then
-        local ok, val = pcall(CONFIG.HealthGetter, instance)
-        if ok and type(val) == "number" then return math.floor(val) end
-    end
-    if instance:IsA("Player") then
-        local char = instance.Character
-        if char then
-            local humanoid = char:FindFirstChildOfClass("Humanoid")
-            if humanoid then
-                return math.floor(humanoid.Health), math.floor(humanoid.MaxHealth)
-            end
-        end
-    end
-    return nil, nil
+-- ==========================================
+-- 核心创建函数
+-- ==========================================
+
+local function CreateHighlight(target)
+    local hl = Instance.new("Highlight")
+    hl.Adornee = target
+    hl.DepthMode = Enum.HighlightDepthMode.AlwaysOnTop
+    hl.FillTransparency = 0.5
+    hl.OutlineTransparency = 0.1
+    hl.Parent = espContainer
+    return hl
 end
 
--- 创建通用文本面板
-local function createTextPanel(instance, text, textColor, offsetY)
-    local billboard = Instance.new("BillboardGui")
-    billboard.Name = "ESP_TextPanel"
-    billboard.Size = UDim2.new(0, 140, 0, 30)
-    billboard.StudsOffset = Vector3.new(0, offsetY or 1.5, 0)
-    billboard.AlwaysOnTop = true
-    billboard.MaxDistance = CONFIG.MaxDistance
-    billboard.Adornee = instance
-    billboard.Parent = instance
-
-    local label = Instance.new("TextLabel")
-    label.Size = UDim2.new(1, 0, 1, 0)
-    label.BackgroundTransparency = 1
-    label.TextColor3 = textColor or Color3.fromRGB(255, 255, 255)
-    label.TextStrokeTransparency = 0.2
-    label.Font = Enum.Font.GothamBold
-    label.TextSize = 16
-    label.Text = text or ""
-    label.Parent = billboard
-
-    return billboard, label
+local function CreateBillboard()
+    local bb = Instance.new("BillboardGui")
+    bb.AlwaysOnTop = true
+    bb.Size = UDim2.new(0, 100, 0, 40)
+    bb.StudsOffset = Vector3.new(0, 3, 0)
+    
+    local layout = Instance.new("UIListLayout")
+    layout.SortOrder = Enum.SortOrder.LayoutOrder
+    layout.HorizontalAlignment = Enum.HorizontalAlignment.Center
+    layout.Parent = bb
+    
+    local nameLbl = Instance.new("TextLabel")
+    nameLbl.BackgroundTransparency = 1
+    nameLbl.Size = UDim2.new(1, 0, 0.5, 0)
+    nameLbl.Font = Enum.Font.GothamBold
+    nameLbl.TextSize = 12
+    nameLbl.TextStrokeTransparency = 0
+    nameLbl.LayoutOrder = 1
+    nameLbl.Parent = bb
+    
+    local healthLbl = Instance.new("TextLabel")
+    healthLbl.BackgroundTransparency = 1
+    healthLbl.Size = UDim2.new(1, 0, 0.5, 0)
+    healthLbl.Font = Enum.Font.Gotham
+    healthLbl.TextSize = 10
+    healthLbl.TextStrokeTransparency = 0
+    healthLbl.LayoutOrder = 2
+    healthLbl.Parent = bb
+    
+    bb.Parent = espContainer
+    return bb, nameLbl, healthLbl
 end
 
--- 更新单个物体的ESP（高亮 + 文本）
-local function updateObjectESP(instance, objData)
-    if not instance then return end
-    local color = getColor(instance)
-    local targetNode = getRootPart(instance) or instance
-    if not targetNode then return end
-
-    -- 高亮
-    if not objData.highlight then
-        objData.highlight = Instance.new("Highlight")
-        objData.highlight.DepthMode = Enum.HighlightDepthMode.AlwaysOnTop
-        objData.highlight.FillTransparency = 0.6
-        objData.highlight.OutlineTransparency = 0.2
-    end
-    objData.highlight.FillColor = color
-    objData.highlight.OutlineColor = color
-    objData.highlight.Parent = targetNode
-    objData.highlight.Enabled = true
-
-    -- 文本面板
-    if objData.text and objData.text ~= "" then
-        if not objData.billboard then
-            local billboard, label = createTextPanel(targetNode, objData.text, objData.textColor, objData.offsetY)
-            objData.billboard = billboard
-            objData.textLabel = label
-        else
-            objData.textLabel.Text = objData.text
-            objData.billboard.Adornee = targetNode
-            objData.billboard.MaxDistance = CONFIG.MaxDistance
-        end
-        objData.billboard.Enabled = true
-    elseif objData.billboard then
-        objData.billboard.Enabled = false
-    end
+local function CreateBeam(targetPart)
+    local att1 = Instance.new("Attachment")
+    att1.Parent = targetPart
+    
+    local beam = Instance.new("Beam")
+    beam.FaceCamera = true
+    beam.Width0 = 0.1
+    beam.Width1 = 0.1
+    beam.LightEmission = 1
+    beam.LightInfluence = 0
+    beam.Attachment0 = GetLocalAttachment()
+    beam.Attachment1 = att1
+    beam.Parent = espContainer
+    
+    return beam, att1
 end
 
--- 更新玩家ESP（名称+血量）
-local function updatePlayerESP(player, objData)
-    if not player or player == LocalPlayer then return end
-    local color = getColor(player)
-    local targetNode = getRootPart(player) or (player.Character and player.Character)
-    if not targetNode then return end
+-- ==========================================
+-- 玩家处理逻辑
+-- ==========================================
 
-    -- 高亮
-    if not objData.highlight then
-        objData.highlight = Instance.new("Highlight")
-        objData.highlight.DepthMode = Enum.HighlightDepthMode.AlwaysOnTop
-        objData.highlight.FillTransparency = 0.6
-        objData.highlight.OutlineTransparency = 0.2
-    end
-    objData.highlight.FillColor = color
-    objData.highlight.OutlineColor = color
-    objData.highlight.Parent = targetNode
-    objData.highlight.Enabled = true
-
-    -- 信息面板
-    if not objData.billboard then
-        local billboard = Instance.new("BillboardGui")
-        billboard.Name = "PlayerInfo"
-        billboard.Size = UDim2.new(0, 160, 0, 40)
-        billboard.StudsOffset = Vector3.new(0, 3.5, 0)
-        billboard.AlwaysOnTop = true
-        billboard.MaxDistance = CONFIG.MaxDistance
-        billboard.Adornee = targetNode
-        billboard.Parent = targetNode
-
-        local frame = Instance.new("Frame")
-        frame.Size = UDim2.new(1, 0, 1, 0)
-        frame.BackgroundTransparency = 1
-        frame.Parent = billboard
-
-        local nameLabel = Instance.new("TextLabel")
-        nameLabel.Size = UDim2.new(1, 0, 0.5, 0)
-        nameLabel.BackgroundTransparency = 1
-        nameLabel.TextColor3 = Color3.new(1,1,1)
-        nameLabel.TextStrokeTransparency = 0.2
-        nameLabel.Font = Enum.Font.GothamBold
-        nameLabel.TextSize = 14
-        nameLabel.Parent = frame
-
-        local healthLabel = Instance.new("TextLabel")
-        healthLabel.Size = UDim2.new(1, 0, 0.5, 0)
-        healthLabel.Position = UDim2.new(0, 0, 0.5, 0)
-        healthLabel.BackgroundTransparency = 1
-        healthLabel.TextColor3 = Color3.fromRGB(100, 255, 100)
-        healthLabel.Font = Enum.Font.Gotham
-        healthLabel.TextSize = 13
-        healthLabel.Parent = frame
-
-        objData.billboard = billboard
-        objData.nameLabel = nameLabel
-        objData.healthLabel = healthLabel
-    end
-
-    objData.billboard.Adornee = targetNode
-    objData.billboard.MaxDistance = CONFIG.MaxDistance
-    objData.billboard.Enabled = (CONFIG.ShowName or CONFIG.ShowHealth) and targetNode ~= nil
-
-    if objData.nameLabel then
-        objData.nameLabel.Text = player.DisplayName or player.Name
-        objData.nameLabel.Visible = CONFIG.ShowName
-    end
-    if objData.healthLabel then
-        local hp, maxHp = getHealth(player)
-        if hp and maxHp then
-            objData.healthLabel.Text = string.format("❤️ %d / %d", hp, maxHp)
-        elseif hp then
-            objData.healthLabel.Text = "❤️ " .. hp
-        else
-            objData.healthLabel.Text = "❤️ ???"
-        end
-        objData.healthLabel.Visible = CONFIG.ShowHealth
-    end
-
-    local numLines = (CONFIG.ShowName and 1 or 0) + (CONFIG.ShowHealth and 1 or 0)
-    if objData.billboard then
-        objData.billboard.Size = (numLines == 1) and UDim2.new(0, 140, 0, 25) or UDim2.new(0, 140, 0, 40)
-    end
-end
-
--- 条件检查：遍历所有带条件的物体，移除不满足条件的
-local function checkConditions()
-    local toRemove = {}
-    for instance, data in pairs(activeObjects) do
-        if data.conditionFunc and not data.conditionFunc(instance) then
-            table.insert(toRemove, instance)
-        end
-    end
-    for _, instance in ipairs(toRemove) do
-        ESP:RemoveObject(instance)
-    end
-end
-
--- 主更新循环（血量刷新 + 条件检查）
-local function startUpdateLoop()
-    if updateConnection then return end
-    updateConnection = RunService.Stepped:Connect(function()
-        local now = tick()
-        -- 刷新玩家血量
-        if now - lastUpdateTime >= CONFIG.UpdateInterval then
-            lastUpdateTime = now
-            for player, data in pairs(activePlayers) do
-                if player and player.Character then
-                    updatePlayerESP(player, data)
-                end
-            end
-            -- 刷新物体文本（如果有动态文本，用户可以手动调用UpdateObjectText，这里不做自动）
-        end
-        -- 条件检查（独立间隔）
-        if now - lastConditionCheck >= CONFIG.ConditionCheckInterval then
-            lastConditionCheck = now
-            checkConditions()
-        end
-    end)
-end
-
-local function stopUpdateLoop()
-    if updateConnection then
-        updateConnection:Disconnect()
-        updateConnection = nil
-    end
-end
-
--- ==================== 公共 API ====================
-
--- 启用ESP（自动追踪所有玩家）
-function ESP:Enable()
-    if self._enabled then return end
-    self._enabled = true
-
-    Players.PlayerAdded:Connect(function(player)
-        task.wait(0.2)
-        if player ~= LocalPlayer then
-            ESP:AddPlayer(player)
-        end
-    end)
-    Players.PlayerRemoving:Connect(function(player)
-        ESP:RemovePlayer(player)
-    end)
-
-    for _, player in ipairs(Players:GetPlayers()) do
-        if player ~= LocalPlayer then
-            ESP:AddPlayer(player)
-        end
-    end
-    startUpdateLoop()
-end
-
--- 禁用ESP（清理所有）
-function ESP:Disable()
-    self._enabled = false
-    stopUpdateLoop()
-    for player, _ in pairs(activePlayers) do
-        ESP:RemovePlayer(player)
-    end
-    for obj, _ in pairs(activeObjects) do
-        ESP:RemoveObject(obj)
-    end
-end
-
--- 添加玩家（内部）
 function ESP:AddPlayer(player)
-    if activePlayers[player] then return end
+    if player == LocalPlayer or self.activePlayers[player] then return end
+    
     local data = {}
-    activePlayers[player] = data
-
-    local function onCharAdded(char)
-        task.wait(0.1)
-        updatePlayerESP(player, data)
+    
+    local function setupCharacter(char)
+        local root = GetRoot(char)
+        if not root then return end
+        
+        data.highlight = CreateHighlight(char)
+        data.billboard, data.nameLabel, data.healthLabel = CreateBillboard()
+        data.billboard.Adornee = root
+        data.beam, data.att1 = CreateBeam(root)
+        
+        -- 初始状态更新
+        self:UpdatePlayerVisuals(player)
     end
-    local function onCharRemoving()
-        if data.highlight then data.highlight.Enabled = false end
-        if data.billboard then data.billboard.Enabled = false end
-    end
-
-    if player.Character then onCharAdded(player.Character) end
-    data.charAdded = player.CharacterAdded:Connect(onCharAdded)
-    data.charRemoved = player.CharacterRemoving:Connect(onCharRemoving)
-    updatePlayerESP(player, data)
-end
-
--- 移除玩家
-function ESP:RemovePlayer(player)
-    local data = activePlayers[player]
-    if data then
+    
+    local function cleanupCharacter()
         if data.highlight then data.highlight:Destroy() end
         if data.billboard then data.billboard:Destroy() end
+        if data.beam then data.beam:Destroy() end
+        if data.att1 then data.att1:Destroy() end
+    end
+    
+    data.charAdded = player.CharacterAdded:Connect(function(char)
+        cleanupCharacter()
+        task.wait(0.5) -- 等待模型加载完毕
+        setupCharacter(char)
+    end)
+    
+    data.charRemoved = player.CharacterRemoving:Connect(cleanupCharacter)
+    
+    if player.Character then
+        setupCharacter(player.Character)
+    end
+    
+    self.activePlayers[player] = data
+end
+
+function ESP:RemovePlayer(player)
+    local data = self.activePlayers[player]
+    if data then
         if data.charAdded then data.charAdded:Disconnect() end
         if data.charRemoved then data.charRemoved:Disconnect() end
-        activePlayers[player] = nil
+        if data.highlight then data.highlight:Destroy() end
+        if data.billboard then data.billboard:Destroy() end
+        if data.beam then data.beam:Destroy() end
+        if data.att1 then data.att1:Destroy() end
+        self.activePlayers[player] = nil
     end
 end
 
--- ==================== 通用物体接口（带条件） ====================
--- 为任意物体添加带条件管理的ESP
--- @param instance: BasePart/Model 要高亮的物体
--- @param options: 表，可选：
---   text: 显示的文本（字符串）
---   textColor: Color3，默认白色
---   offsetY: 文本高度偏移，默认1.5
---   onUpdate: 可选，动态更新文本的回调函数(instance) 每次条件检查时或手动刷新时调用，应返回新文本
--- @param conditionFunc: 返回boolean的函数，接收instance为参数。当返回false时，ESP会被自动移除。若为nil，则永久存在。
-function ESP:AddObjectWithCondition(instance, options, conditionFunc)
-    if not instance or activeObjects[instance] then return end
-    options = options or {}
-    local data = {
-        highlight = nil,
-        billboard = nil,
-        textLabel = nil,
-        text = options.text or "",
-        textColor = options.textColor or Color3.fromRGB(255, 255, 255),
-        offsetY = options.offsetY or 1.5,
-        conditionFunc = conditionFunc,   -- 条件函数
-        onUpdate = options.onUpdate,
-    }
-    activeObjects[instance] = data
+function ESP:UpdatePlayerVisuals(player)
+    local data = self.activePlayers[player]
+    if not data or not data.highlight then return end
+    
+    local isEnabled = self._enabled
+    local root = GetRoot(player.Character)
+    local distance = root and LocalPlayer.Character and GetRoot(LocalPlayer.Character) 
+        and (root.Position - GetRoot(LocalPlayer.Character).Position).Magnitude or 0
+    
+    local withinDistance = distance <= self.Settings.MaxDistance
+    local show = isEnabled and withinDistance
 
-    -- 监听对象销毁
-    local destroyConn
-    destroyConn = instance.AncestryChanged:Connect(function()
-        if not instance.Parent then
-            ESP:RemoveObject(instance)
-            destroyConn:Disconnect()
+    -- 颜色逻辑
+    local color = self.Settings.Color
+    if self.Settings.UseTeamColor and player.Team then
+        color = player.Team.TeamColor.Color
+    end
+
+    data.highlight.Enabled = show
+    data.highlight.FillColor = color
+    data.highlight.OutlineColor = color
+
+    data.billboard.Enabled = show and (self.Settings.ShowName or self.Settings.ShowHealth)
+    
+    if data.billboard.Enabled then
+        data.nameLabel.Visible = self.Settings.ShowName
+        data.nameLabel.Text = player.DisplayName
+        data.nameLabel.TextColor3 = color
+        
+        data.healthLabel.Visible = self.Settings.ShowHealth
+        if self.Settings.ShowHealth then
+            local hp, maxHp = "?", "?"
+            if self.Settings.HealthGetter then
+                hp = self.Settings.HealthGetter(player) or "?"
+            elseif player.Character and player.Character:FindFirstChildOfClass("Humanoid") then
+                local hum = player.Character:FindFirstChildOfClass("Humanoid")
+                hp, maxHp = math.floor(hum.Health), math.floor(hum.MaxHealth)
+            end
+            data.healthLabel.Text = "❤️ " .. tostring(hp) .. " / " .. tostring(maxHp)
+            data.healthLabel.TextColor3 = Color3.fromRGB(255, 100, 100)
+        end
+    end
+
+    data.beam.Enabled = show and self.Settings.ShowRay
+    if data.beam.Enabled then
+        data.beam.Color = ColorSequence.new(color)
+        -- 确保射线起点有效
+        if not data.beam.Attachment0 or not data.beam.Attachment0.Parent then
+            data.beam.Attachment0 = GetLocalAttachment()
+        end
+    end
+end
+
+-- ==========================================
+-- 通用物体处理逻辑
+-- ==========================================
+
+function ESP:AddObject(instance, options)
+    self:AddObjectWithCondition(instance, options, nil)
+end
+
+function ESP:AddObjectWithCondition(instance, options, conditionFunc)
+    if self.activeObjects[instance] then return end
+    options = options or {}
+    
+    local root = GetRoot(instance) or instance
+    if not root:IsA("BasePart") then return end
+
+    local data = {
+        conditionFunc = conditionFunc,
+        options = options,
+        text = options.text or "",
+        textColor = options.textColor or Color3.new(1, 1, 1),
+        onUpdate = options.onUpdate
+    }
+    
+    data.highlight = CreateHighlight(instance)
+    data.highlight.FillColor = data.textColor
+    data.highlight.OutlineColor = data.textColor
+    
+    if options.text then
+        data.billboard, data.nameLabel, _ = CreateBillboard()
+        data.billboard.Adornee = root
+        data.billboard.StudsOffset = Vector3.new(0, options.offsetY or 1.5, 0)
+        data.nameLabel.Text = data.text
+        data.nameLabel.TextColor3 = data.textColor
+    end
+    
+    data.beam, data.att1 = CreateBeam(root)
+    
+    data.destroyConn = instance.AncestryChanged:Connect(function(_, parent)
+        if not parent then
+            self:RemoveObject(instance)
         end
     end)
-    data.destroyConn = destroyConn
-
-    -- 立即创建ESP
-    updateObjectESP(instance, data)
-
-    -- 如果有动态更新回调，建立定时或事件处理（简单起见，在条件检查循环中自动调用）
-    if data.onUpdate then
-        data.refreshText = function()
-            local newText = data.onUpdate(instance)
-            if newText and newText ~= data.text then
-                data.text = newText
-                if data.textLabel then
-                    data.textLabel.Text = newText
-                else
-                    updateObjectESP(instance, data)
-                end
-            end
-        end
-    end
+    
+    self.activeObjects[instance] = data
+    self:UpdateObjectVisuals(instance)
 end
 
--- 兼容旧接口：不带条件的添加（永久存在，直到手动移除）
-function ESP:AddObject(instance, options)
-    ESP:AddObjectWithCondition(instance, options, nil)
-end
-
--- 更新物体文本
 function ESP:UpdateObjectText(instance, newText)
-    local data = activeObjects[instance]
-    if data then
+    local data = self.activeObjects[instance]
+    if data and data.nameLabel then
         data.text = newText
-        if data.textLabel then
-            data.textLabel.Text = newText
-        else
-            updateObjectESP(instance, data)
+        data.nameLabel.Text = newText
+    end
+end
+
+function ESP:RemoveObject(instance)
+    local data = self.activeObjects[instance]
+    if data then
+        if data.destroyConn then data.destroyConn:Disconnect() end
+        if data.highlight then data.highlight:Destroy() end
+        if data.billboard then data.billboard:Destroy() end
+        if data.beam then data.beam:Destroy() end
+        if data.att1 then data.att1:Destroy() end
+        self.activeObjects[instance] = nil
+    end
+end
+
+function ESP:UpdateObjectVisuals(instance)
+    local data = self.activeObjects[instance]
+    if not data then return end
+    
+    local isEnabled = self._enabled
+    local root = GetRoot(instance) or instance
+    local distance = root and LocalPlayer.Character and GetRoot(LocalPlayer.Character) 
+        and (root.Position - GetRoot(LocalPlayer.Character).Position).Magnitude or 0
+    
+    -- 距离检查剔除，防止超出31个Highlight上限
+    local withinDistance = distance <= self.Settings.MaxDistance
+    local show = isEnabled and withinDistance
+    
+    data.highlight.Enabled = show
+    if data.billboard then
+        data.billboard.Enabled = show
+    end
+    
+    data.beam.Enabled = show and self.Settings.ShowRay
+    if data.beam.Enabled then
+        data.beam.Color = ColorSequence.new(data.textColor)
+        if not data.beam.Attachment0 or not data.beam.Attachment0.Parent then
+            data.beam.Attachment0 = GetLocalAttachment()
         end
     end
 end
 
--- 手动刷新某一物体的条件（可用于立即检查）
+-- ==========================================
+-- 条件管理与主循环
+-- ==========================================
+
 function ESP:CheckCondition(instance)
-    local data = activeObjects[instance]
-    if data and data.conditionFunc and not data.conditionFunc(instance) then
-        ESP:RemoveObject(instance)
-        return false
+    local data = self.activeObjects[instance]
+    if data and data.conditionFunc then
+        local passed = pcall(function() return data.conditionFunc(instance) end)
+        if not passed or data.conditionFunc(instance) == false then
+            self:RemoveObject(instance)
+            return false
+        end
     end
     return true
 end
 
--- 手动刷新所有物体的条件（例如房间切换时立即清理）
 function ESP:RefreshConditions()
-    checkConditions()
-end
-
--- 移除物体
-function ESP:RemoveObject(instance)
-    local data = activeObjects[instance]
-    if data then
-        if data.highlight then data.highlight:Destroy() end
-        if data.billboard then data.billboard:Destroy() end
-        if data.destroyConn then data.destroyConn:Disconnect() end
-        activeObjects[instance] = nil
+    for instance, _ in pairs(self.activeObjects) do
+        self:CheckCondition(instance)
     end
 end
 
--- ==================== 配置 API ====================
-function ESP:ShowName(show) CONFIG.ShowName = show end
-function ESP:ShowHealth(show) CONFIG.ShowHealth = show end
-function ESP:SetTeamColor(enable) CONFIG.TeamColor = enable; if enable then CONFIG.CustomColor = nil end end
-function ESP:SetColor(color) CONFIG.CustomColor = color; CONFIG.TeamColor = false end
-function ESP:SetMaxDistance(dist) CONFIG.MaxDistance = dist end
-function ESP:SetUpdateInterval(interval) CONFIG.UpdateInterval = math.max(0.1, interval) end
-function ESP:SetConditionCheckInterval(interval) CONFIG.ConditionCheckInterval = math.max(0.5, interval) end
-function ESP:SetHealthGetter(func) CONFIG.HealthGetter = func end
-function ESP:IsEnabled() return self._enabled or false end
+-- 启动定时器
+local lastUpdate = 0
+local lastConditionCheck = 0
+
+RunService.Heartbeat:Connect(function(dt)
+    if not ESP._enabled then return end
+    
+    lastUpdate += dt
+    lastConditionCheck += dt
+    
+    -- 高频更新：血量、距离判断、动态文字
+    if lastUpdate >= ESP.Settings.UpdateInterval then
+        lastUpdate = 0
+        for player, _ in pairs(ESP.activePlayers) do
+            ESP:UpdatePlayerVisuals(player)
+        end
+        for instance, data in pairs(ESP.activeObjects) do
+            if data.onUpdate then
+                pcall(function() data.onUpdate(instance) end)
+            end
+            ESP:UpdateObjectVisuals(instance)
+        end
+    end
+    
+    -- 低频更新：条件管理（自动销毁不合格物体，如切换房间）
+    if lastConditionCheck >= ESP.Settings.ConditionInterval then
+        lastConditionCheck = 0
+        ESP:RefreshConditions()
+    end
+end)
+
+-- 监听本地玩家重生（修复射线断裂问题）
+LocalPlayer.CharacterAdded:Connect(function(char)
+    task.wait(0.5)
+    localAttachment = nil -- 强制重置起点 Attachment
+    GetLocalAttachment()
+end)
+
+-- 监听全局玩家进出
+Players.PlayerAdded:Connect(function(player)
+    ESP:AddPlayer(player)
+end)
+Players.PlayerRemoving:Connect(function(player)
+    ESP:RemovePlayer(player)
+end)
+
+-- ==========================================
+-- 公开 API 接口
+-- ==========================================
+
+function ESP:Enable()
+    self._enabled = true
+    for _, player in pairs(Players:GetPlayers()) do
+        self:AddPlayer(player)
+    end
+    self:RefreshConditions() -- 强制更新一次显示状态
+end
+
+function ESP:Disable()
+    self._enabled = false
+    -- 将所有 enabled 设为 false，保留对象
+    for player, _ in pairs(self.activePlayers) do
+        self:UpdatePlayerVisuals(player)
+    end
+    for instance, _ in pairs(self.activeObjects) do
+        self:UpdateObjectVisuals(instance)
+    end
+end
+
+function ESP:IsEnabled() return self._enabled end
+
+function ESP:ShowName(val) self.Settings.ShowName = val; self:RefreshConditions() end
+function ESP:ShowHealth(val) self.Settings.ShowHealth = val; self:RefreshConditions() end
+function ESP:ShowRay(val) self.Settings.ShowRay = val; self:RefreshConditions() end
+function ESP:SetMode(mode) end -- 预留占位符，仅使用 Highlight
+function ESP:SetColor(color) self.Settings.Color = color; self:RefreshConditions() end
+function ESP:SetTeamColor(val) self.Settings.UseTeamColor = val; self:RefreshConditions() end
+function ESP:SetMaxDistance(dist) self.Settings.MaxDistance = dist; self:RefreshConditions() end
+function ESP:SetUpdateInterval(sec) self.Settings.UpdateInterval = sec end
+function ESP:SetConditionCheckInterval(sec) self.Settings.ConditionInterval = sec end
+function ESP:SetHealthGetter(func) self.Settings.HealthGetter = func; self:RefreshConditions() end
 
 return ESP
