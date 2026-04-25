@@ -1,7 +1,8 @@
---[[
-    High-Performance ESP Library v1.1 (射线修复版)
-    支持玩家自动追踪、通用物体高亮、距离剔除、射线连线
-]]
+-- =====================================================
+-- ESP 库 v1.2 (射线稳定版)
+-- 修复: 本地玩家重生后射线自动重连
+-- 支持: 玩家高亮 + 信息面板 + 通用物体 + 射线连线
+-- =====================================================
 
 local Players = game:GetService("Players")
 local RunService = game:GetService("RunService")
@@ -9,13 +10,11 @@ local CoreGui = game:GetService("CoreGui")
 
 local LocalPlayer = Players.LocalPlayer
 
--- 创建安全容器
+-- 容器
 local espContainer = Instance.new("Folder")
 espContainer.Name = "ESP_Container"
 local success = pcall(function() espContainer.Parent = CoreGui end)
-if not success then 
-    espContainer.Parent = LocalPlayer:WaitForChild("PlayerGui") 
-end
+if not success then espContainer.Parent = LocalPlayer:WaitForChild("PlayerGui") end
 
 local ESP = {
     _enabled = false,
@@ -32,38 +31,37 @@ local ESP = {
     },
     activePlayers = {},
     activeObjects = {},
-    connections = {}
 }
 
--- 本地玩家射线附件（全局复用，角色重连时自动重新获取）
-local localAttachment = nil
-
+-- 获取本地玩家的射线连接点 (每次实时获取，避免缓存失效)
 local function GetLocalAttachment()
-    local character = LocalPlayer.Character
-    if not character then return nil end
-    local root = character:FindFirstChild("HumanoidRootPart") or character:FindFirstChild("Head")
+    local char = LocalPlayer.Character
+    if not char then return nil end
+    local root = char:FindFirstChild("HumanoidRootPart") or char:FindFirstChild("Head")
     if not root then return nil end
-    if not localAttachment or localAttachment.Parent ~= root then
-        localAttachment = Instance.new("Attachment")
-        localAttachment.Name = "ESP_LocalAttachment"
-        localAttachment.Parent = root
+    -- 确保附件存在
+    local att = root:FindFirstChild("ESP_LocalAttachment")
+    if not att then
+        att = Instance.new("Attachment")
+        att.Name = "ESP_LocalAttachment"
+        att.Parent = root
     end
-    return localAttachment
+    return att
 end
 
--- 获取有效根部件
+-- 获取物体的根部件
 local function GetRoot(instance)
     if instance:IsA("Player") then
         local char = instance.Character
         if not char then return nil end
         return char:FindFirstChild("HumanoidRootPart") or char:FindFirstChild("Head") or char:FindFirstChildWhichIsA("BasePart")
     elseif instance:IsA("Model") then
-        return instance:FindFirstChild("HumanoidRootPart") or instance:FindFirstChild("Head") or instance.PrimaryPart or instance:FindFirstChildWhichIsA("BasePart")
+        return instance:FindFirstChild("HumanoidRootPart") or instance:FindFirstChild("Head") 
+               or instance.PrimaryPart or instance:FindFirstChildWhichIsA("BasePart")
     elseif instance:IsA("BasePart") then
         return instance
-    else
-        return nil
     end
+    return nil
 end
 
 -- 创建高亮
@@ -78,7 +76,7 @@ local function CreateHighlight(target)
 end
 
 -- 创建玩家信息面板
-local function CreateBillboard()
+local function CreatePlayerBillboard()
     local bb = Instance.new("BillboardGui")
     bb.AlwaysOnTop = true
     bb.Size = UDim2.new(0, 120, 0, 40)
@@ -111,7 +109,7 @@ local function CreateBillboard()
     return bb, nameLbl, healthLbl
 end
 
--- 创建射线（Beam）
+-- 创建射线 (返回 beam, targetAttachment)
 local function CreateRay(targetRoot, color)
     local localAtt = GetLocalAttachment()
     if not localAtt or not targetRoot then return nil, nil end
@@ -129,31 +127,31 @@ local function CreateRay(targetRoot, color)
     return beam, targetAtt
 end
 
--- ==========================================
--- 玩家处理逻辑
--- ==========================================
+-- 重新绑定射线的起点 (本地角色重生后调用)
+local function RefreshRayAttachment(beam)
+    if not beam then return end
+    local localAtt = GetLocalAttachment()
+    if localAtt then
+        beam.Attachment0 = localAtt
+    end
+end
 
+-- ==================== 玩家管理 ====================
 function ESP:AddPlayer(player)
     if player == LocalPlayer or self.activePlayers[player] then return end
-    
     local data = {}
     
     local function setupCharacter(char)
         local root = GetRoot(char)
         if not root then return end
-        
         data.highlight = CreateHighlight(char)
-        data.billboard, data.nameLabel, data.healthLabel = CreateBillboard()
+        data.billboard, data.nameLabel, data.healthLabel = CreatePlayerBillboard()
         data.billboard.Adornee = root
-        
-        -- 射线创建（暂时不设置 Enabled，等待全局开关）
+        -- 提前创建射线实例，启用/禁用由全局开关控制
         if root then
-            local localAtt = GetLocalAttachment()
-            if localAtt then
-                data.beam, data.targetAtt = CreateRay(root, self.Settings.Color)
-            end
+            data.beam, data.targetAtt = CreateRay(root, self.Settings.Color)
         end
-        self:UpdatePlayerVisuals(player)
+        self:UpdatePlayerVis(player)
     end
     
     local function cleanupCharacter()
@@ -165,15 +163,12 @@ function ESP:AddPlayer(player)
     
     data.charAdded = player.CharacterAdded:Connect(function(char)
         cleanupCharacter()
-        task.wait(0.5)
+        task.wait(0.3)
         setupCharacter(char)
     end)
     data.charRemoved = player.CharacterRemoving:Connect(cleanupCharacter)
     
-    if player.Character then
-        setupCharacter(player.Character)
-    end
-    
+    if player.Character then setupCharacter(player.Character) end
     self.activePlayers[player] = data
 end
 
@@ -190,27 +185,26 @@ function ESP:RemovePlayer(player)
     end
 end
 
-function ESP:UpdatePlayerVisuals(player)
+function ESP:UpdatePlayerVis(player)
     local data = self.activePlayers[player]
     if not data or not data.highlight then return end
     
-    local isEnabled = self._enabled
+    local enabled = self._enabled
     local root = GetRoot(player.Character)
     local localRoot = GetRoot(LocalPlayer.Character)
     local distance = root and localRoot and (root.Position - localRoot.Position).Magnitude or math.huge
-    local withinDistance = distance <= self.Settings.MaxDistance
-    local show = isEnabled and withinDistance and root ~= nil
-
+    local show = enabled and (distance <= self.Settings.MaxDistance) and (root ~= nil)
+    
     -- 颜色
     local color = self.Settings.Color
     if self.Settings.UseTeamColor and player.Team then
         color = player.Team.TeamColor.Color
     end
-
+    
     data.highlight.Enabled = show
     data.highlight.FillColor = color
     data.highlight.OutlineColor = color
-
+    
     -- 信息面板
     data.billboard.Enabled = show and (self.Settings.ShowName or self.Settings.ShowHealth)
     if data.billboard.Enabled then
@@ -231,26 +225,20 @@ function ESP:UpdatePlayerVisuals(player)
             data.healthLabel.TextColor3 = Color3.fromRGB(255, 100, 100)
         end
     end
-
-    -- 射线：仅当全局开关打开、ESP启用且在距离内
+    
+    -- 射线
     if data.beam then
-        local rayEnabled = show and self.Settings.ShowRay
-        data.beam.Enabled = rayEnabled
-        if rayEnabled then
+        local rayShow = show and self.Settings.ShowRay
+        data.beam.Enabled = rayShow
+        if rayShow then
+            -- 关键修复: 每次启用时强制刷新本地 Attachment
+            RefreshRayAttachment(data.beam)
             data.beam.Color = ColorSequence.new(color)
-            -- 确保 Attachment0 是最新的（本地角色可能重生）
-            local localAtt = GetLocalAttachment()
-            if localAtt and data.beam.Attachment0 ~= localAtt then
-                data.beam.Attachment0 = localAtt
-            end
         end
     end
 end
 
--- ==========================================
--- 通用物体处理逻辑
--- ==========================================
-
+-- ==================== 通用物体管理 ====================
 function ESP:AddObject(instance, options)
     self:AddObjectWithCondition(instance, options, nil)
 end
@@ -258,16 +246,15 @@ end
 function ESP:AddObjectWithCondition(instance, options, conditionFunc)
     if self.activeObjects[instance] then return end
     options = options or {}
-    
     local root = GetRoot(instance)
     if not root then return end
     
     local data = {
         conditionFunc = conditionFunc,
-        options = options,
         text = options.text or "",
         textColor = options.textColor or Color3.new(1,1,1),
-        onUpdate = options.onUpdate
+        onUpdate = options.onUpdate,
+        options = options,
     }
     
     data.highlight = CreateHighlight(instance)
@@ -275,30 +262,28 @@ function ESP:AddObjectWithCondition(instance, options, conditionFunc)
     data.highlight.OutlineColor = data.textColor
     
     if options.text then
-        local billboard, nameLabel, _ = CreateBillboard()
-        billboard.StudsOffset = Vector3.new(0, options.offsetY or 1.5, 0)
-        billboard.Size = UDim2.new(0, 100, 0, 25)
-        billboard.Adornee = root
-        nameLabel.Text = data.text
-        nameLabel.TextColor3 = data.textColor
-        nameLabel.Size = UDim2.new(1,0,1,0)
-        data.billboard = billboard
-        data.nameLabel = nameLabel
+        local bb, lbl, _ = CreatePlayerBillboard()
+        bb.StudsOffset = Vector3.new(0, options.offsetY or 1.5, 0)
+        bb.Size = UDim2.new(0, 100, 0, 25)
+        bb.Adornee = root
+        lbl.Text = data.text
+        lbl.TextColor3 = data.textColor
+        lbl.Size = UDim2.new(1,0,1,0)
+        data.billboard = bb
+        data.nameLabel = lbl
     end
     
-    -- 射线
+    -- 物体也能添加射线
     if root then
         data.beam, data.targetAtt = CreateRay(root, data.textColor)
     end
     
     data.destroyConn = instance.AncestryChanged:Connect(function()
-        if not instance.Parent then
-            self:RemoveObject(instance)
-        end
+        if not instance.Parent then self:RemoveObject(instance) end
     end)
     
     self.activeObjects[instance] = data
-    self:UpdateObjectVisuals(instance)
+    self:UpdateObjectVis(instance)
 end
 
 function ESP:UpdateObjectText(instance, newText)
@@ -321,133 +306,109 @@ function ESP:RemoveObject(instance)
     end
 end
 
-function ESP:UpdateObjectVisuals(instance)
+function ESP:UpdateObjectVis(instance)
     local data = self.activeObjects[instance]
     if not data then return end
     
-    local isEnabled = self._enabled
+    local enabled = self._enabled
     local root = GetRoot(instance)
     local localRoot = GetRoot(LocalPlayer.Character)
     local distance = root and localRoot and (root.Position - localRoot.Position).Magnitude or math.huge
-    local withinDistance = distance <= self.Settings.MaxDistance
-    local show = isEnabled and withinDistance and root ~= nil
-
+    local show = enabled and (distance <= self.Settings.MaxDistance) and (root ~= nil)
+    
     data.highlight.Enabled = show
     if data.billboard then
         data.billboard.Enabled = show
-        if show and data.onUpdate then
-            pcall(data.onUpdate, instance)
-        end
+        if show and data.onUpdate then pcall(data.onUpdate, instance) end
     end
     if data.beam then
-        data.beam.Enabled = show and self.Settings.ShowRay
-        if data.beam.Enabled then
+        local rayShow = show and self.Settings.ShowRay
+        data.beam.Enabled = rayShow
+        if rayShow then
+            RefreshRayAttachment(data.beam)
             data.beam.Color = ColorSequence.new(data.textColor)
-            local localAtt = GetLocalAttachment()
-            if localAtt and data.beam.Attachment0 ~= localAtt then
-                data.beam.Attachment0 = localAtt
+        end
+    end
+end
+
+-- ==================== 条件检查 ====================
+function ESP:RefreshConditions()
+    for instance, data in pairs(self.activeObjects) do
+        if data.conditionFunc then
+            local ok, res = pcall(data.conditionFunc, instance)
+            if not ok or not res then
+                self:RemoveObject(instance)
             end
         end
     end
 end
 
--- ==========================================
--- 条件管理与主循环
--- ==========================================
-
-function ESP:CheckCondition(instance)
-    local data = self.activeObjects[instance]
-    if data and data.conditionFunc then
-        local ok, result = pcall(data.conditionFunc, instance)
-        if not ok or not result then
-            self:RemoveObject(instance)
-            return false
-        end
-    end
-    return true
-end
-
-function ESP:RefreshConditions()
-    for instance, _ in pairs(self.activeObjects) do
-        self:CheckCondition(instance)
-    end
-end
-
--- 定时器
+-- ==================== 主循环 ====================
 local lastUpdate = 0
-local lastConditionCheck = 0
-
+local lastCondition = 0
 RunService.Heartbeat:Connect(function(dt)
     if not ESP._enabled then return end
-    
     lastUpdate = lastUpdate + dt
-    lastConditionCheck = lastConditionCheck + dt
+    lastCondition = lastCondition + dt
     
     if lastUpdate >= ESP.Settings.UpdateInterval then
         lastUpdate = 0
-        for player, _ in pairs(ESP.activePlayers) do
-            ESP:UpdatePlayerVisuals(player)
+        for player in pairs(ESP.activePlayers) do
+            ESP:UpdatePlayerVis(player)
         end
-        for instance, _ in pairs(ESP.activeObjects) do
-            ESP:UpdateObjectVisuals(instance)
+        for obj in pairs(ESP.activeObjects) do
+            ESP:UpdateObjectVis(obj)
         end
     end
     
-    if lastConditionCheck >= ESP.Settings.ConditionInterval then
-        lastConditionCheck = 0
+    if lastCondition >= ESP.Settings.ConditionInterval then
+        lastCondition = 0
         ESP:RefreshConditions()
     end
 end)
 
--- 玩家进出监听
-Players.PlayerAdded:Connect(function(player)
-    ESP:AddPlayer(player)
-end)
-Players.PlayerRemoving:Connect(function(player)
-    ESP:RemovePlayer(player)
-end)
-
--- 本地玩家重生时重置射线附件（已有 GetLocalAttachment 会自动处理）
+-- 监听本地角色重生，届时所有射线的 Attachment0 会在下次 RefreshRayAttachment 中修复
 LocalPlayer.CharacterAdded:Connect(function()
-    localAttachment = nil
+    task.wait(0.2)
+    for _, data in pairs(ESP.activePlayers) do
+        if data.beam then RefreshRayAttachment(data.beam) end
+    end
+    for _, data in pairs(ESP.activeObjects) do
+        if data.beam then RefreshRayAttachment(data.beam) end
+    end
 end)
 
--- ==========================================
--- 公开 API
--- ==========================================
+-- 玩家进出监听
+Players.PlayerAdded:Connect(ESP.AddPlayer)
+Players.PlayerRemoving:Connect(ESP.RemovePlayer)
 
+-- ==================== 公开 API ====================
 function ESP:Enable()
     if self._enabled then return end
     self._enabled = true
     for _, player in pairs(Players:GetPlayers()) do
-        if player ~= LocalPlayer then
-            self:AddPlayer(player)
-        end
+        if player ~= LocalPlayer then self:AddPlayer(player) end
     end
     self:RefreshConditions()
 end
 
 function ESP:Disable()
     self._enabled = false
-    for player, _ in pairs(self.activePlayers) do
-        self:UpdatePlayerVisuals(player)
-    end
-    for instance, _ in pairs(self.activeObjects) do
-        self:UpdateObjectVisuals(instance)
-    end
+    for player, _ in pairs(self.activePlayers) do self:UpdatePlayerVis(player) end
+    for obj, _ in pairs(self.activeObjects) do self:UpdateObjectVis(obj) end
 end
 
 function ESP:IsEnabled() return self._enabled end
 
+function ESP:ShowRay(val) self.Settings.ShowRay = val; self:RefreshConditions() end
 function ESP:ShowName(val) self.Settings.ShowName = val; self:RefreshConditions() end
 function ESP:ShowHealth(val) self.Settings.ShowHealth = val; self:RefreshConditions() end
-function ESP:ShowRay(val) self.Settings.ShowRay = val; self:RefreshConditions() end
-function ESP:SetMode(mode) end
 function ESP:SetColor(color) self.Settings.Color = color; self:RefreshConditions() end
 function ESP:SetTeamColor(val) self.Settings.UseTeamColor = val; self:RefreshConditions() end
 function ESP:SetMaxDistance(dist) self.Settings.MaxDistance = dist; self:RefreshConditions() end
 function ESP:SetUpdateInterval(sec) self.Settings.UpdateInterval = sec end
 function ESP:SetConditionCheckInterval(sec) self.Settings.ConditionInterval = sec end
 function ESP:SetHealthGetter(func) self.Settings.HealthGetter = func; self:RefreshConditions() end
+function ESP:SetMode(mode) end
 
 return ESP
