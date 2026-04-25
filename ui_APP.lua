@@ -1,8 +1,6 @@
 --[[
-    精美自适应通用 UI 库 v3.4 (动态渐变升级+高级控件扩展)
-    优化：侧边栏完美自适应、主题切换修复、流畅渐变、文字主题跟随、防误触、通知栏上调
-    新增：悬浮球 Q 弹点击动画、主界面丝滑弹性弹出/收起动画
-    v3.4 新增：Apple 风格动态循环渐变、CreateImage、CreateColorPicker、CreateKeybind 等控件
+    精美自适应通用 UI 库 v3.5 (色板取色器升级版)
+    优化：移除渐变系统、新增色板颜色选择器、主题背景跟随、修复取色体验
 ]]
 
 local UserInputService = game:GetService("UserInputService")
@@ -55,7 +53,7 @@ local function AddCorner(parent, radius)
     return corner
 end
 
--- ========== 内置主题库 ==========
+-- ========== 内置主题库（已移除渐变） ==========
 Library.Themes = {
     Default = {
         Accent = Color3.fromRGB(85, 170, 255),
@@ -108,28 +106,8 @@ Library.Themes = {
         ToggleOffColor = Color3.fromRGB(220, 190, 190),
         DividerColor = Color3.fromRGB(230, 210, 210),
         Gradient = nil
-    },
-    WarmGradient = {
-        Accent = Color3.fromRGB(255, 100, 80),
-        MainBackground = Color3.fromRGB(255, 240, 230),
-        SidebarBackground = Color3.fromRGB(250, 230, 220),
-        ElementBackground = Color3.fromRGB(255, 245, 240),
-        TopBarBackground = Color3.fromRGB(255, 235, 225),
-        TextColor = Color3.fromRGB(80, 50, 40),
-        TitleTextColor = Color3.fromRGB(60, 30, 20),
-        ElementTextColor = Color3.fromRGB(90, 55, 45),
-        ToggleOffColor = Color3.fromRGB(220, 200, 190),
-        DividerColor = Color3.fromRGB(230, 210, 200),
-        Gradient = Instance.new("UIGradient")
     }
 }
-
-local warmGrad = Library.Themes.WarmGradient.Gradient
-warmGrad.Color = ColorSequence.new({
-    ColorSequenceKeypoint.new(0, Color3.fromRGB(255, 200, 150)),
-    ColorSequenceKeypoint.new(1, Color3.fromRGB(255, 120, 100))
-})
-warmGrad.Rotation = 45
 
 -- ========== 创建窗口 ==========
 function Library:CreateWindow(options)
@@ -173,7 +151,7 @@ function Library:CreateWindow(options)
     NotificationContainer.ZIndex = 10
     NotificationContainer.Parent = ScreenGui
 
-    -- 悬浮球 (新增了居中锚点和 UIScale 缩放器)
+    -- 悬浮球
     local FloatingBall = Instance.new("TextButton")
     FloatingBall.Size = UDim2.new(0, 50, 0, 50)
     FloatingBall.AnchorPoint = Vector2.new(0.5, 0.5)
@@ -196,7 +174,7 @@ function Library:CreateWindow(options)
         UIStrokeBall.Color = t.Accent
     end)
 
-    -- 主框架 (新增 UIScale 缩放器)
+    -- 主框架
     local MainFrame = Instance.new("Frame")
     MainFrame.AnchorPoint = Vector2.new(0.5, 0.5)
     MainFrame.Position = UDim2.new(0.5, 0, 0.5, 0)
@@ -212,10 +190,6 @@ function Library:CreateWindow(options)
     MainStroke.Color = Theme.Accent
     MainStroke.Thickness = 1.5
     MainStroke.Transparency = 0.4
-    if Theme.Gradient then
-        local grad = Theme.Gradient:Clone()
-        grad.Parent = MainFrame
-    end
     local SizeConstraint = Instance.new("UISizeConstraint")
     SizeConstraint.MaxSize = Vector2.new(650, 400)
     SizeConstraint.MinSize = Vector2.new(300, 250)
@@ -313,7 +287,7 @@ function Library:CreateWindow(options)
     MakeDraggable(TopBar, MainFrame)
     MakeDraggable(FloatingBall, FloatingBall)
 
-    -- >>> 弹性展开/收回的核心逻辑 <<<
+    -- >>> 弹性展开/收回 <<<
     local isUiOpen = true
     local isAnimating = false
 
@@ -321,7 +295,6 @@ function Library:CreateWindow(options)
         if isAnimating then return end
         isAnimating = true
 
-        -- 1. 悬浮球 Q 弹按压效果
         local pressTween = TweenService:Create(BallScale, TweenInfo.new(0.1, Enum.EasingStyle.Sine, Enum.EasingDirection.Out), {Scale = 0.8})
         pressTween:Play()
         pressTween.Completed:Wait()
@@ -329,7 +302,6 @@ function Library:CreateWindow(options)
 
         isUiOpen = not isUiOpen
 
-        -- 2. 主界面弹性开关动画
         if isUiOpen then
             MainFrame.Visible = true
             MainScale.Scale = 0
@@ -349,7 +321,6 @@ function Library:CreateWindow(options)
             end)
         end
     end)
-    -- >>> 弹性动画逻辑结束 <<<
 
     local Window = {}
     local Tabs = {}
@@ -366,71 +337,9 @@ function Library:CreateWindow(options)
         end
     end
 
-    -- 渐变动画相关变量
-    local gradientAnimConn
-    local colorCycleConn
-
-    local function stopGradientAnimation()
-        if gradientAnimConn then
-            gradientAnimConn:Disconnect()
-            gradientAnimConn = nil
-        end
-        if colorCycleConn then
-            colorCycleConn:Disconnect()
-            colorCycleConn = nil
-        end
-    end
-    
-    local function startGradientAnimation(grad, themeName)
-        stopGradientAnimation()
-        if not grad then return end
-        
-        -- 旋转动画
-        gradientAnimConn = RunService.RenderStepped:Connect(function(dt)
-            if not grad.Parent then stopGradientAnimation() return end
-            grad.Rotation = (grad.Rotation + dt * 30) % 360
-        end)
-        
-        -- Apple 风格动态色彩循环（仅 WarmGradient 主题启用）
-        if themeName == "WarmGradient" then
-            local startTime = os.clock()
-            colorCycleConn = RunService.RenderStepped:Connect(function()
-                if not grad.Parent then stopGradientAnimation() return end
-                local elapsed = os.clock() - startTime
-                -- 使用正弦波生成平滑流动的色相
-                local hue1 = (elapsed * 0.08) % 1
-                local hue2 = (hue1 + 0.15) % 1
-                local hue3 = (hue1 + 0.3) % 1
-                
-                local color1 = Color3.fromHSV(hue1, 0.7, 0.95)
-                local color2 = Color3.fromHSV(hue2, 0.8, 0.9)
-                local color3 = Color3.fromHSV(hue3, 0.9, 0.85)
-                
-                grad.Color = ColorSequence.new({
-                    ColorSequenceKeypoint.new(0, color1),
-                    ColorSequenceKeypoint.new(0.5, color2),
-                    ColorSequenceKeypoint.new(1, color3)
-                })
-            end)
-        end
-    end
-
     function Window:ApplyTheme(themeName)
         closeDropdown() 
         loadTheme(themeName)
-        
-        for _, child in ipairs(MainFrame:GetChildren()) do
-            if child:IsA("UIGradient") then child:Destroy() end
-        end
-        
-        if Theme.Gradient then
-            local newGrad = Theme.Gradient:Clone()
-            newGrad.Parent = MainFrame
-            startGradientAnimation(newGrad, themeName) -- 传入主题名称以启用色彩循环
-        else
-            stopGradientAnimation()
-        end
-        
         for _, func in ipairs(themeUpdateFunctions) do
             func(Theme)
         end
@@ -564,6 +473,7 @@ function Library:CreateWindow(options)
 
         local Elements = {}
 
+        -- ========== 原有控件（Label/Button/Toggle/Slider/InfoPanel/Dropdown等，保持不变） ==========
         function Elements:CreateLabel(text)
             local LabelFrame = Instance.new("Frame")
             LabelFrame.Size = UDim2.new(1, 0, 0, 30)
@@ -893,9 +803,8 @@ function Library:CreateWindow(options)
             return DropdownFrame
         end
 
-        -- ******************** 新增高级控件 ********************
+        -- ******************** 新增控件 ********************
 
-        -- 图片显示控件（内嵌图片）
         function Elements:CreateImage(imageId, sizeX, sizeY)
             local img = Instance.new("ImageLabel")
             img.Name = "ImageElement"
@@ -911,7 +820,7 @@ function Library:CreateWindow(options)
             return img
         end
 
-        -- 颜色选择器 (带 RGB 滑块)
+        -- 新版色板颜色选择器（画画软件风格）
         function Elements:CreateColorPicker(text, defaultColor, callback)
             local currentColor = defaultColor or Color3.fromRGB(255, 255, 255)
             local pickerFrame = Instance.new("Frame")
@@ -954,9 +863,9 @@ function Library:CreateWindow(options)
             local pickerPopup = nil
             colorPreview.MouseButton1Click:Connect(function()
                 if pickerPopup then pickerPopup:Destroy() end
-                -- 弹出颜色选择面板
+                -- 弹出2D色板面板
                 pickerPopup = Instance.new("Frame")
-                pickerPopup.Size = UDim2.new(0, 220, 0, 180)
+                pickerPopup.Size = UDim2.new(0, 224, 0, 200)
                 pickerPopup.Position = UDim2.new(0, colorPreview.AbsolutePosition.X - 160, 0, colorPreview.AbsolutePosition.Y + 32)
                 pickerPopup.BackgroundColor3 = Theme.ElementBackground
                 pickerPopup.BorderSizePixel = 0
@@ -967,89 +876,155 @@ function Library:CreateWindow(options)
                 popupStroke.Color = Theme.Accent
                 popupStroke.Thickness = 1
 
-                -- R, G, B 滑块
-                local function createChannelSlider(name, channelValue, yPos)
-                    local channelLabel = Instance.new("TextLabel")
-                    channelLabel.Size = UDim2.new(0, 20, 0, 16)
-                    channelLabel.Position = UDim2.new(0, 10, 0, yPos)
-                    channelLabel.BackgroundTransparency = 1
-                    channelLabel.Text = name
-                    channelLabel.TextColor3 = Theme.TextColor
-                    channelLabel.Font = Enum.Font.GothamBold
-                    channelLabel.TextSize = 13
-                    channelLabel.TextXAlignment = Enum.TextXAlignment.Left
-                    channelLabel.Parent = pickerPopup
+                -- 饱和度/明度选择区（左侧方形）
+                local svBox = Instance.new("ImageButton")
+                svBox.Size = UDim2.new(0, 180, 0, 180)
+                svBox.Position = UDim2.new(0, 8, 0, 8)
+                svBox.Image = ""
+                svBox.BackgroundColor3 = Color3.fromRGB(255, 0, 0)
+                svBox.Parent = pickerPopup
+                AddCorner(svBox, 4)
 
-                    local bar = Instance.new("Frame")
-                    bar.Size = UDim2.new(1, -60, 0, 16)
-                    bar.Position = UDim2.new(0, 35, 0, yPos)
-                    bar.BackgroundColor3 = Color3.fromRGB(50,50,50)
-                    bar.Parent = pickerPopup
-                    AddCorner(bar, 8)
+                -- 白色渐变（水平：饱和度）
+                local whiteGrad = Instance.new("UIGradient", svBox)
+                whiteGrad.Color = ColorSequence.new({
+                    ColorSequenceKeypoint.new(0, Color3.fromRGB(255, 255, 255)),
+                    ColorSequenceKeypoint.new(1, Color3.fromRGB(255, 255, 255))
+                })
+                whiteGrad.Transparency = NumberSequence.new({
+                    NumberSequenceKeypoint.new(0, 1),
+                    NumberSequenceKeypoint.new(1, 0)
+                })
 
-                    local fill = Instance.new("Frame")
-                    fill.Size = UDim2.new(channelValue/255, 0, 1, 0)
-                    fill.BackgroundColor3 = (name == "R" and Color3.fromRGB(255,0,0)) or
-                                           (name == "G" and Color3.fromRGB(0,255,0)) or
-                                           Color3.fromRGB(0,0,255)
-                    fill.Parent = bar
-                    AddCorner(fill, 8)
+                -- 黑色渐变（垂直：明度）
+                local blackGrad = Instance.new("UIGradient", svBox)
+                blackGrad.Color = ColorSequence.new({
+                    ColorSequenceKeypoint.new(0, Color3.fromRGB(0, 0, 0)),
+                    ColorSequenceKeypoint.new(1, Color3.fromRGB(0, 0, 0))
+                })
+                blackGrad.Transparency = NumberSequence.new({
+                    NumberSequenceKeypoint.new(0, 0),
+                    NumberSequenceKeypoint.new(1, 1)
+                })
 
-                    local btn = Instance.new("TextButton")
-                    btn.Size = UDim2.new(1, 0, 1, 0)
-                    btn.BackgroundTransparency = 1
-                    btn.Text = ""
-                    btn.Parent = bar
+                -- 色相条（右侧）
+                local hueBar = Instance.new("ImageButton")
+                hueBar.Size = UDim2.new(0, 22, 0, 180)
+                hueBar.Position = UDim2.new(0, 194, 0, 8)
+                hueBar.Image = ""
+                hueBar.BackgroundColor3 = Color3.fromRGB(255, 255, 255)
+                hueBar.Parent = pickerPopup
+                AddCorner(hueBar, 4)
 
-                    local dragging = false
-                    local function update(input)
-                        local pos = math.clamp(input.Position.X - bar.AbsolutePosition.X, 0, bar.AbsoluteSize.X)
-                        local val = math.floor(pos / bar.AbsoluteSize.X * 255)
-                        fill.Size = UDim2.new(val/255, 0, 1, 0)
-                        if name == "R" then currentColor = Color3.fromRGB(val, currentColor.G*255, currentColor.B*255)
-                        elseif name == "G" then currentColor = Color3.fromRGB(currentColor.R*255, val, currentColor.B*255)
-                        else currentColor = Color3.fromRGB(currentColor.R*255, currentColor.G*255, val) end
-                        colorPreview.BackgroundColor3 = currentColor
-                        pcall(callback, currentColor)
-                    end
-                    btn.InputBegan:Connect(function(input)
-                        if input.UserInputType == Enum.UserInputType.MouseButton1 or input.UserInputType == Enum.UserInputType.Touch then
-                            dragging = true
-                            update(input)
-                        end
-                    end)
-                    UserInputService.InputEnded:Connect(function(input)
-                        if input.UserInputType == Enum.UserInputType.MouseButton1 or input.UserInputType == Enum.UserInputType.Touch then
-                            dragging = false
-                        end
-                    end)
-                    UserInputService.InputChanged:Connect(function(input)
-                        if dragging and (input.UserInputType == Enum.UserInputType.MouseMovement or input.UserInputType == Enum.UserInputType.Touch) then
-                            update(input)
-                        end
-                    end)
-                    return bar, fill
+                local hueGrad = Instance.new("UIGradient", hueBar)
+                hueGrad.Color = ColorSequence.new({
+                    ColorSequenceKeypoint.new(0, Color3.fromRGB(255, 0, 0)),
+                    ColorSequenceKeypoint.new(0.17, Color3.fromRGB(255, 255, 0)),
+                    ColorSequenceKeypoint.new(0.33, Color3.fromRGB(0, 255, 0)),
+                    ColorSequenceKeypoint.new(0.5, Color3.fromRGB(0, 255, 255)),
+                    ColorSequenceKeypoint.new(0.67, Color3.fromRGB(0, 0, 255)),
+                    ColorSequenceKeypoint.new(0.83, Color3.fromRGB(255, 0, 255)),
+                    ColorSequenceKeypoint.new(1, Color3.fromRGB(255, 0, 0))
+                })
+                hueGrad.Rotation = 90
+
+                -- 选择指示器（小白圈）
+                local svIndicator = Instance.new("Frame")
+                svIndicator.Size = UDim2.new(0, 10, 0, 10)
+                svIndicator.AnchorPoint = Vector2.new(0.5, 0.5)
+                svIndicator.BackgroundColor3 = Color3.fromRGB(255, 255, 255)
+                svIndicator.BorderColor3 = Color3.fromRGB(0, 0, 0)
+                svIndicator.BorderSizePixel = 1
+                svIndicator.Parent = svBox
+                AddCorner(svIndicator, 5)
+
+                local hueIndicator = Instance.new("Frame")
+                hueIndicator.Size = UDim2.new(1, 0, 0, 4)
+                hueIndicator.AnchorPoint = Vector2.new(0, 0.5)
+                hueIndicator.BackgroundColor3 = Color3.fromRGB(255, 255, 255)
+                hueIndicator.BorderColor3 = Color3.fromRGB(0, 0, 0)
+                hueIndicator.BorderSizePixel = 1
+                hueIndicator.Parent = hueBar
+
+                -- 从当前颜色计算初始 SV/Hue 位置
+                local h, s, v = currentColor:ToHSV()
+                svIndicator.Position = UDim2.new(s, 0, 1-v, 0)
+                hueIndicator.Position = UDim2.new(0, 0, h, 0)
+
+                local svDragging = false
+                local hueDragging = false
+
+                -- 更新显示颜色回调
+                local function updateCurrentColor()
+                    svBox.BackgroundColor3 = Color3.fromHSV(h, 1, 1)
+                    local newColor = Color3.fromHSV(h, s, v)
+                    currentColor = newColor
+                    colorPreview.BackgroundColor3 = currentColor
+                    pcall(callback, currentColor)
                 end
 
-                createChannelSlider("R", currentColor.R*255, 10)
-                createChannelSlider("G", currentColor.G*255, 40)
-                createChannelSlider("B", currentColor.B*255, 70)
+                -- SV 框交互
+                local function updateSV(input)
+                    local relX = math.clamp(input.Position.X - svBox.AbsolutePosition.X, 0, svBox.AbsoluteSize.X) / svBox.AbsoluteSize.X
+                    local relY = math.clamp(input.Position.Y - svBox.AbsolutePosition.Y, 0, svBox.AbsoluteSize.Y) / svBox.AbsoluteSize.Y
+                    s = relX
+                    v = 1 - relY
+                    svIndicator.Position = UDim2.new(s, 0, relY, 0)
+                    updateCurrentColor()
+                end
 
+                svBox.InputBegan:Connect(function(input)
+                    if input.UserInputType == Enum.UserInputType.MouseButton1 or input.UserInputType == Enum.UserInputType.Touch then
+                        svDragging = true
+                        updateSV(input)
+                    end
+                end)
+
+                -- 色相条交互
+                local function updateHue(input)
+                    local relY = math.clamp(input.Position.Y - hueBar.AbsolutePosition.Y, 0, hueBar.AbsoluteSize.Y) / hueBar.AbsoluteSize.Y
+                    h = relY
+                    hueIndicator.Position = UDim2.new(0, 0, h, 0)
+                    updateCurrentColor()
+                end
+
+                hueBar.InputBegan:Connect(function(input)
+                    if input.UserInputType == Enum.UserInputType.MouseButton1 or input.UserInputType == Enum.UserInputType.Touch then
+                        hueDragging = true
+                        updateHue(input)
+                    end
+                end)
+
+                UserInputService.InputEnded:Connect(function(input)
+                    if input.UserInputType == Enum.UserInputType.MouseButton1 or input.UserInputType == Enum.UserInputType.Touch then
+                        svDragging = false
+                        hueDragging = false
+                    end
+                end)
+                UserInputService.InputChanged:Connect(function(input)
+                    if svDragging and (input.UserInputType == Enum.UserInputType.MouseMovement or input.UserInputType == Enum.UserInputType.Touch) then
+                        updateSV(input)
+                    elseif hueDragging and (input.UserInputType == Enum.UserInputType.MouseMovement or input.UserInputType == Enum.UserInputType.Touch) then
+                        updateHue(input)
+                    end
+                end)
+
+                -- 确认关闭按钮
                 local closeBtn = Instance.new("TextButton")
-                closeBtn.Size = UDim2.new(1, -20, 0, 30)
-                closeBtn.Position = UDim2.new(0, 10, 0, 105)
+                closeBtn.Size = UDim2.new(1, -16, 0, 26)
+                closeBtn.Position = UDim2.new(0, 8, 0, 168)
                 closeBtn.BackgroundColor3 = Theme.Accent
-                closeBtn.Text = "确认"
+                closeBtn.Text = "完成"
                 closeBtn.TextColor3 = Color3.fromRGB(255,255,255)
                 closeBtn.Font = Enum.Font.GothamSemibold
                 closeBtn.TextSize = 14
                 closeBtn.Parent = pickerPopup
-                AddCorner(closeBtn, 8)
+                AddCorner(closeBtn, 6)
                 closeBtn.MouseButton1Click:Connect(function()
                     pickerPopup:Destroy()
                     pickerPopup = nil
                 end)
-                -- 点击遮罩关闭
+                -- 点击遮罩也可关闭
                 local closeConn
                 closeConn = DropdownOverlay.MouseButton1Click:Connect(function()
                     if pickerPopup then
@@ -1062,7 +1037,6 @@ function Library:CreateWindow(options)
             return pickerFrame
         end
 
-        -- 按键绑定控件
         function Elements:CreateKeybind(text, defaultKey, callback)
             local currentKey = defaultKey or Enum.KeyCode.E
             local keybindFrame = Instance.new("Frame")
@@ -1127,7 +1101,6 @@ function Library:CreateWindow(options)
             return keybindFrame
         end
 
-        -- 段落/多行文本控件
         function Elements:CreateParagraph(text, lines)
             local paragraphFrame = Instance.new("Frame")
             paragraphFrame.Size = UDim2.new(1, 0, 0, (lines or 2) * 24 + 12)
@@ -1156,7 +1129,6 @@ function Library:CreateWindow(options)
     end
 
     function Window:Destroy()
-        stopGradientAnimation()
         if ScreenGui then
             ScreenGui:Destroy()
         end
