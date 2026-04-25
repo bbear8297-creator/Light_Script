@@ -1,7 +1,6 @@
 --[[
-    精美自适应通用 UI 库 v3.9 Final (音频/图片/滚动修复)
-    修复：导航栏/内容区无内容时仍可滚动 → 动态限制 CanvasSize
-    新增：通知可被动触发，自动适配无图片/无音效情况
+    精美自适应通用 UI 库 v3.9.1 (稳定修复版)
+    修复：库加载安全性、滚动限制、通知图文适配、被动触发、音效系统
 ]]
 
 local UserInputService = game:GetService("UserInputService")
@@ -126,7 +125,6 @@ function Library:CreateWindow(options)
     ScreenGui.ZIndexBehavior = Enum.ZIndexBehavior.Sibling
     ScreenGui.Parent = targetGui
 
-    -- 全局音效对象
     local soundObject = Instance.new("Sound")
     soundObject.Volume = 1
     soundObject.Parent = ScreenGui
@@ -286,10 +284,6 @@ function Library:CreateWindow(options)
     TabListLayout.HorizontalAlignment = Enum.HorizontalAlignment.Center
     TabListLayout.Parent = TabContainer
 
-    -- 修复侧边栏滚动：当内容高度不足时不滚动
-    TabContainer:GetPropertyChangedSignal("CanvasSize"):Connect(function()
-        -- 不主动设置，使用下面逻辑
-    end)
     local function updateSidebarScroll()
         local contentHeight = TabListLayout.AbsoluteContentSize.Y
         local containerHeight = TabContainer.AbsoluteSize.Y
@@ -403,7 +397,6 @@ function Library:CreateWindow(options)
 
     local currentNotification = nil
     function Window:Notify(params)
-        -- 兼容旧写法：Window:Notify(title, message, duration)
         if type(params) == "string" then
             params = {Title = params, Message = select(2,...), Duration = select(3,...)}
         end
@@ -554,7 +547,6 @@ function Library:CreateWindow(options)
         PageLayout.Padding = UDim.new(0, 8)
         PageLayout.Parent = TabPage
 
-        -- 修复内容区滚动：内容不够时不出现滚动条/滚动空间
         local function updateContentScroll()
             local contentHeight = PageLayout.AbsoluteContentSize.Y
             local containerHeight = TabPage.AbsoluteSize.Y
@@ -603,12 +595,12 @@ function Library:CreateWindow(options)
                     end
                 end
             end
-            updateContentScroll() -- 切换后刷新 CanvasSize
+            updateContentScroll()
         end)
 
         local Elements = {}
 
-        -- ========== 基础控件（不变） ==========
+        -- ========== 基础控件 ==========
         function Elements:CreateLabel(text)
             local LabelFrame = Instance.new("Frame")
             LabelFrame.Size = UDim2.new(1, 0, 0, 30)
