@@ -1,7 +1,6 @@
 --[[
-    精美自适应通用 UI 库 v3.6 (悬浮球/图标/快捷键/取色器全面升级)
-    优化：背景完整跟随主题、快捷键稳定可靠、悬浮球支持图片(可选)、标签页支持图标(可选)
-    默认：无图片时悬浮球显示"UI"，标签栏只显示文字
+    精美自适应通用 UI 库 v3.7 (色板联动整体主题)
+    颜色选择器现在自动生成全套界面配色，背景/侧边栏/元素/文字全部跟随
 ]]
 
 local UserInputService = game:GetService("UserInputService")
@@ -53,7 +52,7 @@ local function AddCorner(parent, radius)
     return corner
 end
 
--- ========== 内置主题库（无渐变） ==========
+-- ========== 内置主题库 ==========
 Library.Themes = {
     Default = {
         Accent = Color3.fromRGB(85, 170, 255),
@@ -109,7 +108,7 @@ Library.Themes = {
 function Library:CreateWindow(options)
     local WindowTitle = options.Title or "Executor UI"
     local initialTheme = options.Theme or "Default"
-    local floatingBallImage = options.FloatingBallImage  -- 可选：悬浮球图片ID
+    local floatingBallImage = options.FloatingBallImage  -- 可选
 
     local Theme = {}
     local function loadTheme(name)
@@ -148,7 +147,7 @@ function Library:CreateWindow(options)
     NotificationContainer.ZIndex = 10
     NotificationContainer.Parent = ScreenGui
 
-    -- 悬浮球（优先图片，其次文字“UI”）
+    -- 悬浮球
     local FloatingBall
     if floatingBallImage then
         FloatingBall = Instance.new("ImageButton")
@@ -358,8 +357,26 @@ function Library:CreateWindow(options)
         end
     end
 
+    -- 核心：从色板颜色生成整套主题
     function Window:SetAccentColor(color)
+        -- 自动生成协调的界面配色
+        local h, s, v = color:ToHSV()
         Theme.Accent = color
+        Theme.MainBackground = Color3.fromHSV(h, s * 0.12, math.min(v + 0.35, 1))
+        Theme.SidebarBackground = Color3.fromHSV(h, s * 0.18, math.min(v + 0.25, 1))
+        Theme.ElementBackground = Color3.fromHSV(h, s * 0.08, math.min(v + 0.4, 1))
+        Theme.TopBarBackground = Color3.fromHSV(h, s * 0.05, math.min(v + 0.45, 1))
+        -- 文字颜色：根据背景亮度自动选择深色/浅色
+        local bg = Theme.MainBackground
+        local luminance = 0.299*bg.R + 0.587*bg.G + 0.114*bg.B
+        local textColor = luminance > 0.55 and Color3.fromRGB(30,30,30) or Color3.fromRGB(240,240,240)
+        Theme.TextColor = textColor
+        Theme.TitleTextColor = textColor
+        Theme.ElementTextColor = textColor
+        Theme.ToggleOffColor = Color3.fromHSV(h, s * 0.05, math.min(v + 0.2, 1))
+        Theme.DividerColor = Color3.fromHSV(h, s * 0.08, math.min(v + 0.3, 1))
+
+        -- 刷新所有UI
         for _, func in ipairs(themeUpdateFunctions) do
             func(Theme)
         end
@@ -426,7 +443,6 @@ function Library:CreateWindow(options)
         TabButton.Parent = TabContainer
         AddCorner(TabButton, 8)
 
-        -- 内容容器（图标 + 文字）
         local contentHolder = Instance.new("Frame")
         contentHolder.Size = UDim2.new(1, -10, 1, 0)
         contentHolder.Position = UDim2.new(0, 5, 0, 0)
@@ -440,7 +456,6 @@ function Library:CreateWindow(options)
         listLayout.Padding = UDim.new(0, 5)
         listLayout.Parent = contentHolder
 
-        -- 图标（如果提供）
         if iconId then
             local icon = Instance.new("ImageLabel")
             icon.Size = UDim2.new(0, 18, 0, 18)
@@ -449,7 +464,6 @@ function Library:CreateWindow(options)
             icon.Parent = contentHolder
         end
 
-        -- 文字
         local tabText = Instance.new("TextLabel")
         tabText.Size = UDim2.new(1, -10, 1, 0)
         tabText.BackgroundTransparency = 1
@@ -528,7 +542,7 @@ function Library:CreateWindow(options)
 
         local Elements = {}
 
-        --- 基础控件 ---
+        -- ============ 基础控件 (不变) ============
         function Elements:CreateLabel(text)
             local LabelFrame = Instance.new("Frame")
             LabelFrame.Size = UDim2.new(1, 0, 0, 30)
@@ -858,7 +872,7 @@ function Library:CreateWindow(options)
             return DropdownFrame
         end
 
-        --- 高级控件 ---
+        -- ============ 高级控件 ============
         function Elements:CreateImage(imageId, sizeX, sizeY)
             local img = Instance.new("ImageLabel")
             img.Name = "ImageElement"
@@ -874,6 +888,7 @@ function Library:CreateWindow(options)
             return img
         end
 
+        -- 色板颜色选择器
         function Elements:CreateColorPicker(text, defaultColor, callback)
             local currentColor = defaultColor or Color3.fromRGB(255, 255, 255)
             local pickerFrame = Instance.new("Frame")
@@ -908,7 +923,6 @@ function Library:CreateWindow(options)
             local function apply(t)
                 pickerFrame.BackgroundColor3 = t.ElementBackground
                 label.TextColor3 = t.TextColor
-                colorPreview.BackgroundColor3 = currentColor
                 previewStroke.Color = t.Accent
             end
             table.insert(themeUpdateFunctions, apply)
@@ -928,6 +942,7 @@ function Library:CreateWindow(options)
                 popupStroke.Color = Theme.Accent
                 popupStroke.Thickness = 1
 
+                -- 饱和度/明度区
                 local svBox = Instance.new("ImageButton")
                 svBox.Size = UDim2.new(0, 180, 0, 180)
                 svBox.Position = UDim2.new(0, 8, 0, 8)
@@ -945,7 +960,6 @@ function Library:CreateWindow(options)
                     NumberSequenceKeypoint.new(0, 1),
                     NumberSequenceKeypoint.new(1, 0)
                 })
-
                 local blackGrad = Instance.new("UIGradient", svBox)
                 blackGrad.Color = ColorSequence.new({
                     ColorSequenceKeypoint.new(0, Color3.fromRGB(0, 0, 0)),
@@ -956,6 +970,7 @@ function Library:CreateWindow(options)
                     NumberSequenceKeypoint.new(1, 1)
                 })
 
+                -- 色相条
                 local hueBar = Instance.new("ImageButton")
                 hueBar.Size = UDim2.new(0, 22, 0, 180)
                 hueBar.Position = UDim2.new(0, 194, 0, 8)
@@ -963,7 +978,6 @@ function Library:CreateWindow(options)
                 hueBar.BackgroundColor3 = Color3.fromRGB(255, 255, 255)
                 hueBar.Parent = pickerPopup
                 AddCorner(hueBar, 4)
-
                 local hueGrad = Instance.new("UIGradient", hueBar)
                 hueGrad.Color = ColorSequence.new({
                     ColorSequenceKeypoint.new(0, Color3.fromRGB(255, 0, 0)),
@@ -976,6 +990,7 @@ function Library:CreateWindow(options)
                 })
                 hueGrad.Rotation = 90
 
+                -- 指示器
                 local svIndicator = Instance.new("Frame")
                 svIndicator.Size = UDim2.new(0, 10, 0, 10)
                 svIndicator.AnchorPoint = Vector2.new(0.5, 0.5)
@@ -1005,7 +1020,7 @@ function Library:CreateWindow(options)
                     local newColor = Color3.fromHSV(h, s, v)
                     currentColor = newColor
                     colorPreview.BackgroundColor3 = currentColor
-                    pcall(callback, currentColor)
+                    pcall(callback, currentColor)  -- 这里会调用 Window:SetAccentColor，从而联动整体主题
                 end
 
                 local function updateSV(input)
