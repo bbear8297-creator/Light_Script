@@ -1,6 +1,6 @@
 --[[
-    精美自适应通用 UI 库 v3.7.1 (主题整体联动 + 图标背景可配)
-    优化：色板取色器联动整套界面配色、悬浮球/标签图标支持自定义背景、快捷键稳定
+    精美自适应通用 UI 库 v3.7.2 (通知图片支持 + 自适应布局)
+    优化：色板联动整体主题、通知可插入图片、图标背景可配、快捷键稳定
 ]]
 
 local UserInputService = game:GetService("UserInputService")
@@ -379,26 +379,48 @@ function Library:CreateWindow(options)
         end
     end
 
+    -- ========== 通知增强版：支持图片，自适应高度 ==========
     local currentNotification = nil
-    function Window:Notify(title, message, duration)
+    function Window:Notify(title, message, duration, imageId)
         title = title or "通知"
         message = message or ""
         duration = duration or 4
         if currentNotification then
             currentNotification:Destroy()
         end
+
+        -- 通知框
         local notifFrame = Instance.new("Frame")
         notifFrame.BackgroundColor3 = Theme.ElementBackground
-        notifFrame.Size = UDim2.new(0, 240, 0, 60)
+        notifFrame.Size = UDim2.new(0, 240, 0, 0) -- 初始高度0，后续自动调整
         notifFrame.Position = UDim2.new(1, 10, 0, 0)
         notifFrame.Parent = NotificationContainer
         AddCorner(notifFrame, 8)
         local stroke = Instance.new("UIStroke", notifFrame)
         stroke.Color = Theme.Accent
         stroke.Thickness = 1
+
+        -- 左侧图片（如果有）
+        local imgSize = 48
+        local padding = 8
+        local hasImage = imageId and true or false
+        local textXOffset = hasImage and (imgSize + padding) or 0
+
+        if hasImage then
+            local notifImage = Instance.new("ImageLabel")
+            notifImage.Size = UDim2.new(0, imgSize, 0, imgSize)
+            notifImage.Position = UDim2.new(0, padding, 0.5, -imgSize/2)
+            notifImage.BackgroundColor3 = Color3.fromRGB(200, 200, 200)
+            notifImage.Image = imageId
+            notifImage.ScaleType = Enum.ScaleType.Fit
+            notifImage.Parent = notifFrame
+            AddCorner(notifImage, 6)
+        end
+
+        -- 标题
         local titleLabel = Instance.new("TextLabel")
-        titleLabel.Size = UDim2.new(1, -16, 0, 20)
-        titleLabel.Position = UDim2.new(0, 8, 0, 6)
+        titleLabel.Size = UDim2.new(1, -textXOffset - 20, 0, 20)
+        titleLabel.Position = UDim2.new(0, textXOffset + 4, 0, 6)
         titleLabel.BackgroundTransparency = 1
         titleLabel.Text = title
         titleLabel.TextColor3 = Theme.TextColor
@@ -406,9 +428,11 @@ function Library:CreateWindow(options)
         titleLabel.TextSize = 14
         titleLabel.TextXAlignment = Enum.TextXAlignment.Left
         titleLabel.Parent = notifFrame
+
+        -- 消息（自动换行）
         local msgLabel = Instance.new("TextLabel")
-        msgLabel.Size = UDim2.new(1, -16, 0, 20)
-        msgLabel.Position = UDim2.new(0, 8, 0, 28)
+        msgLabel.Size = UDim2.new(1, -textXOffset - 20, 0, 0)
+        msgLabel.Position = UDim2.new(0, textXOffset + 4, 0, 30)
         msgLabel.BackgroundTransparency = 1
         msgLabel.Text = message
         msgLabel.TextColor3 = Theme.TextColor
@@ -417,7 +441,33 @@ function Library:CreateWindow(options)
         msgLabel.TextXAlignment = Enum.TextXAlignment.Left
         msgLabel.TextWrapped = true
         msgLabel.Parent = notifFrame
-        notifFrame:TweenPosition(UDim2.new(1, -250, 0, 0), "Out", "Quad", 0.3)
+
+        -- 计算消息所需高度
+        local function calculateMsgHeight()
+            local textSize = game:GetService("TextService"):GetTextSize(
+                msgLabel.Text,
+                msgLabel.TextSize,
+                msgLabel.Font,
+                Vector2.new(msgLabel.AbsoluteSize.X, math.huge)
+            )
+            return textSize.Y
+        end
+
+        -- 需要等一下 AbsoluteSize 计算
+        local function adjustSize()
+            local msgHeight = calculateMsgHeight()
+            local minHeight = hasImage and (imgSize + 12) or 50
+            local totalHeight = math.max(minHeight, 30 + msgHeight + 12) -- 30标题区，消息高，内边距
+            notifFrame.Size = UDim2.new(0, 240, 0, totalHeight)
+            msgLabel.Size = UDim2.new(1, -textXOffset - 20, 0, msgHeight)
+
+            -- 重新调整动画
+            notifFrame:TweenPosition(UDim2.new(1, -250, 0, 0), "Out", "Quad", 0.3)
+        end
+
+        -- 延迟一帧以确保消息尺寸正确
+        task.defer(adjustSize)
+
         currentNotification = notifFrame
         delay(duration, function()
             if notifFrame and notifFrame.Parent then
@@ -431,9 +481,8 @@ function Library:CreateWindow(options)
         end)
     end
 
-    -- 标签页创建（新增图标选项）
+    -- 标签页创建（图标可选背景）
     function Window:CreateTab(TabName, iconId, iconOptions)
-        -- iconOptions 表可包含：BackgroundColor3, BackgroundTransparency, ImageColor3, Size
         local TabButton = Instance.new("TextButton")
         TabButton.Name = TabName
         TabButton.Size = UDim2.new(0.9, 0, 0, 30)
@@ -455,9 +504,8 @@ function Library:CreateWindow(options)
         listLayout.Padding = UDim.new(0, 5)
         listLayout.Parent = contentHolder
 
-        -- 图标（可自定义背景）
         if iconId then
-            if type(iconId) == "table" then  -- 兼容旧格式
+            if type(iconId) == "table" then
                 iconOptions = iconId
                 iconId = iconOptions.Image
             end
@@ -468,7 +516,6 @@ function Library:CreateWindow(options)
             end
             icon.Size = defaultSize
             icon.Image = iconId
-            -- 背景设置：默认完全透明，可通过 iconOptions 覆盖
             if iconOptions and iconOptions.BackgroundColor3 then
                 icon.BackgroundColor3 = iconOptions.BackgroundColor3
                 icon.BackgroundTransparency = iconOptions.BackgroundTransparency or 0
@@ -559,7 +606,7 @@ function Library:CreateWindow(options)
 
         local Elements = {}
 
-        -- ========== 基础控件（不变） ==========
+        -- ========== 基础控件 ==========
         function Elements:CreateLabel(text)
             local LabelFrame = Instance.new("Frame")
             LabelFrame.Size = UDim2.new(1, 0, 0, 30)
@@ -905,7 +952,6 @@ function Library:CreateWindow(options)
             return img
         end
 
-        -- 色板颜色选择器
         function Elements:CreateColorPicker(text, defaultColor, callback)
             local currentColor = defaultColor or Color3.fromRGB(255, 255, 255)
             local pickerFrame = Instance.new("Frame")
