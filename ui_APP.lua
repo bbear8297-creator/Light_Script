@@ -1,7 +1,7 @@
 --[[
-    精美自适应通用 UI 库 v3.7.2 (修复侧边栏滚动 + 通知图片支持)
-    优化：色板联动整体主题、通知可插入图片自适应布局、图标背景可配、快捷键稳定
-    修复：侧边栏 TabContainer 不再允许空白区域滚动
+    精美自适应通用 UI 库 v1.0.1 (色板弹窗可拖动)
+    LS Team 开发
+    修复：颜色选择器弹出窗口现在可以通过顶部标题栏自由拖拽移动
 ]]
 
 local UserInputService = game:GetService("UserInputService")
@@ -277,7 +277,7 @@ function Library:CreateWindow(options)
     TabContainer.BackgroundTransparency = 1
     TabContainer.ScrollBarThickness = 0
     TabContainer.ScrollingEnabled = true
-    TabContainer.CanvasSize = UDim2.new(0, 0, 0, 0) -- 初始为 0，后续自适应
+    TabContainer.CanvasSize = UDim2.new(0, 0, 0, 0)
     TabContainer.Parent = Sidebar
     local TabListLayout = Instance.new("UIListLayout")
     TabListLayout.SortOrder = Enum.SortOrder.LayoutOrder
@@ -952,6 +952,7 @@ function Library:CreateWindow(options)
             return img
         end
 
+        -- 色板颜色选择器（增加可拖动的标题栏）
         function Elements:CreateColorPicker(text, defaultColor, callback)
             local currentColor = defaultColor or Color3.fromRGB(255, 255, 255)
             local pickerFrame = Instance.new("Frame")
@@ -994,7 +995,7 @@ function Library:CreateWindow(options)
             colorPreview.MouseButton1Click:Connect(function()
                 if pickerPopup then pickerPopup:Destroy() end
                 pickerPopup = Instance.new("Frame")
-                pickerPopup.Size = UDim2.new(0, 224, 0, 200)
+                pickerPopup.Size = UDim2.new(0, 224, 0, 218) -- 高度增加 18 给拖动条
                 pickerPopup.Position = UDim2.new(0, colorPreview.AbsolutePosition.X - 160, 0, colorPreview.AbsolutePosition.Y + 32)
                 pickerPopup.BackgroundColor3 = Theme.ElementBackground
                 pickerPopup.BorderSizePixel = 0
@@ -1005,9 +1006,25 @@ function Library:CreateWindow(options)
                 popupStroke.Color = Theme.Accent
                 popupStroke.Thickness = 1
 
+                -- ★ 新增拖动手柄 ★
+                local DragBar = Instance.new("TextButton")
+                DragBar.Size = UDim2.new(1, 0, 0, 18)
+                DragBar.Position = UDim2.new(0, 0, 0, 0)
+                DragBar.BackgroundColor3 = Theme.Accent
+                DragBar.BackgroundTransparency = 0.7
+                DragBar.Text = "⋮⋮ 拖动移动"
+                DragBar.TextColor3 = Theme.TextColor
+                DragBar.Font = Enum.Font.GothamBold
+                DragBar.TextSize = 11
+                DragBar.Parent = pickerPopup
+                AddCorner(DragBar, 10)
+                -- 使整个色板可拖动
+                MakeDraggable(DragBar, pickerPopup)
+
+                -- 饱和度/明度区 (向下偏移 22 像素)
                 local svBox = Instance.new("ImageButton")
                 svBox.Size = UDim2.new(0, 180, 0, 180)
-                svBox.Position = UDim2.new(0, 8, 0, 8)
+                svBox.Position = UDim2.new(0, 8, 0, 26)
                 svBox.Image = ""
                 svBox.BackgroundColor3 = Color3.fromRGB(255, 0, 0)
                 svBox.Parent = pickerPopup
@@ -1032,9 +1049,10 @@ function Library:CreateWindow(options)
                     NumberSequenceKeypoint.new(1, 1)
                 })
 
+                -- 色相条 (向下偏移 22 像素)
                 local hueBar = Instance.new("ImageButton")
                 hueBar.Size = UDim2.new(0, 22, 0, 180)
-                hueBar.Position = UDim2.new(0, 194, 0, 8)
+                hueBar.Position = UDim2.new(0, 194, 0, 26)
                 hueBar.Image = ""
                 hueBar.BackgroundColor3 = Color3.fromRGB(255, 255, 255)
                 hueBar.Parent = pickerPopup
@@ -1127,9 +1145,10 @@ function Library:CreateWindow(options)
                     end
                 end)
 
+                -- 完成按钮 (向下偏移 26 像素)
                 local closeBtn = Instance.new("TextButton")
                 closeBtn.Size = UDim2.new(1, -16, 0, 26)
-                closeBtn.Position = UDim2.new(0, 8, 0, 168)
+                closeBtn.Position = UDim2.new(0, 8, 0, 188)
                 closeBtn.BackgroundColor3 = Theme.Accent
                 closeBtn.Text = "完成"
                 closeBtn.TextColor3 = Color3.fromRGB(255,255,255)
