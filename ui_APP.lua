@@ -1,12 +1,14 @@
 --[[
-    精美自适应通用 UI 库 v3.7.2 (通知图片支持 + 自适应布局)
-    优化：色板联动整体主题、通知可插入图片、图标背景可配、快捷键稳定
+    精美自适应通用 UI 库 v3.7.2 (修复侧边栏滚动 + 通知图片支持)
+    优化：色板联动整体主题、通知可插入图片自适应布局、图标背景可配、快捷键稳定
+    修复：侧边栏 TabContainer 不再允许空白区域滚动
 ]]
 
 local UserInputService = game:GetService("UserInputService")
 local TweenService = game:GetService("TweenService")
 local CoreGui = game:GetService("CoreGui")
 local Players = game:GetService("Players")
+local TextService = game:GetService("TextService")
 
 local Library = {}
 
@@ -268,17 +270,25 @@ function Library:CreateWindow(options)
     SideDivider.BorderSizePixel = 0
     SideDivider.Parent = Sidebar
 
+    -- 修复：侧边栏标签容器，动态 CanvasSize 避免多余滚动
     local TabContainer = Instance.new("ScrollingFrame")
     TabContainer.Size = UDim2.new(1, 0, 1, -10)
     TabContainer.Position = UDim2.new(0, 0, 0, 5)
     TabContainer.BackgroundTransparency = 1
     TabContainer.ScrollBarThickness = 0
+    TabContainer.ScrollingEnabled = true
+    TabContainer.CanvasSize = UDim2.new(0, 0, 0, 0) -- 初始为 0，后续自适应
     TabContainer.Parent = Sidebar
     local TabListLayout = Instance.new("UIListLayout")
     TabListLayout.SortOrder = Enum.SortOrder.LayoutOrder
     TabListLayout.Padding = UDim.new(0, 5)
     TabListLayout.HorizontalAlignment = Enum.HorizontalAlignment.Center
     TabListLayout.Parent = TabContainer
+
+    -- 关键修复：根据内容高度实时调整 CanvasSize，防止空白滚动
+    TabListLayout:GetPropertyChangedSignal("AbsoluteContentSize"):Connect(function()
+        TabContainer.CanvasSize = UDim2.new(0, 0, 0, TabListLayout.AbsoluteContentSize.Y)
+    end)
 
     table.insert(themeUpdateFunctions, function(t)
         Sidebar.BackgroundColor3 = t.SidebarBackground
@@ -389,10 +399,9 @@ function Library:CreateWindow(options)
             currentNotification:Destroy()
         end
 
-        -- 通知框
         local notifFrame = Instance.new("Frame")
         notifFrame.BackgroundColor3 = Theme.ElementBackground
-        notifFrame.Size = UDim2.new(0, 240, 0, 0) -- 初始高度0，后续自动调整
+        notifFrame.Size = UDim2.new(0, 240, 0, 0)
         notifFrame.Position = UDim2.new(1, 10, 0, 0)
         notifFrame.Parent = NotificationContainer
         AddCorner(notifFrame, 8)
@@ -400,7 +409,6 @@ function Library:CreateWindow(options)
         stroke.Color = Theme.Accent
         stroke.Thickness = 1
 
-        -- 左侧图片（如果有）
         local imgSize = 48
         local padding = 8
         local hasImage = imageId and true or false
@@ -417,7 +425,6 @@ function Library:CreateWindow(options)
             AddCorner(notifImage, 6)
         end
 
-        -- 标题
         local titleLabel = Instance.new("TextLabel")
         titleLabel.Size = UDim2.new(1, -textXOffset - 20, 0, 20)
         titleLabel.Position = UDim2.new(0, textXOffset + 4, 0, 6)
@@ -429,7 +436,6 @@ function Library:CreateWindow(options)
         titleLabel.TextXAlignment = Enum.TextXAlignment.Left
         titleLabel.Parent = notifFrame
 
-        -- 消息（自动换行）
         local msgLabel = Instance.new("TextLabel")
         msgLabel.Size = UDim2.new(1, -textXOffset - 20, 0, 0)
         msgLabel.Position = UDim2.new(0, textXOffset + 4, 0, 30)
@@ -442,9 +448,8 @@ function Library:CreateWindow(options)
         msgLabel.TextWrapped = true
         msgLabel.Parent = notifFrame
 
-        -- 计算消息所需高度
         local function calculateMsgHeight()
-            local textSize = game:GetService("TextService"):GetTextSize(
+            local textSize = TextService:GetTextSize(
                 msgLabel.Text,
                 msgLabel.TextSize,
                 msgLabel.Font,
@@ -453,21 +458,16 @@ function Library:CreateWindow(options)
             return textSize.Y
         end
 
-        -- 需要等一下 AbsoluteSize 计算
         local function adjustSize()
             local msgHeight = calculateMsgHeight()
             local minHeight = hasImage and (imgSize + 12) or 50
-            local totalHeight = math.max(minHeight, 30 + msgHeight + 12) -- 30标题区，消息高，内边距
+            local totalHeight = math.max(minHeight, 30 + msgHeight + 12)
             notifFrame.Size = UDim2.new(0, 240, 0, totalHeight)
             msgLabel.Size = UDim2.new(1, -textXOffset - 20, 0, msgHeight)
-
-            -- 重新调整动画
             notifFrame:TweenPosition(UDim2.new(1, -250, 0, 0), "Out", "Quad", 0.3)
         end
 
-        -- 延迟一帧以确保消息尺寸正确
         task.defer(adjustSize)
-
         currentNotification = notifFrame
         delay(duration, function()
             if notifFrame and notifFrame.Parent then
