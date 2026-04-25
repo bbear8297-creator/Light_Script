@@ -1,8 +1,3 @@
---[[
-    精美自适应通用 UI 库 v1.0.1 (色板弹窗可拖动)
-    LS Team 开发
-    修复：颜色选择器弹出窗口现在可以通过顶部标题栏自由拖拽移动
-]]
 
 local UserInputService = game:GetService("UserInputService")
 local TweenService = game:GetService("TweenService")
