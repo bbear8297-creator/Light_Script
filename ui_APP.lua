@@ -1,7 +1,8 @@
 --[[
-    精美自适应通用 UI 库 v3.3 (弹性动画升级版)
+    精美自适应通用 UI 库 v3.4 (动态渐变升级+高级控件扩展)
     优化：侧边栏完美自适应、主题切换修复、流畅渐变、文字主题跟随、防误触、通知栏上调
     新增：悬浮球 Q 弹点击动画、主界面丝滑弹性弹出/收起动画
+    v3.4 新增：Apple 风格动态循环渐变、CreateImage、CreateColorPicker、CreateKeybind 等控件
 ]]
 
 local UserInputService = game:GetService("UserInputService")
@@ -175,7 +176,7 @@ function Library:CreateWindow(options)
     -- 悬浮球 (新增了居中锚点和 UIScale 缩放器)
     local FloatingBall = Instance.new("TextButton")
     FloatingBall.Size = UDim2.new(0, 50, 0, 50)
-    FloatingBall.AnchorPoint = Vector2.new(0.5, 0.5) -- 居中，方便缩放动画
+    FloatingBall.AnchorPoint = Vector2.new(0.5, 0.5)
     FloatingBall.Position = UDim2.new(0.1, 25, 0.1, 25) 
     FloatingBall.BackgroundColor3 = Theme.ElementBackground
     FloatingBall.Text = "UI"
@@ -187,7 +188,7 @@ function Library:CreateWindow(options)
     local UIStrokeBall = Instance.new("UIStroke", FloatingBall)
     UIStrokeBall.Color = Theme.Accent
     UIStrokeBall.Thickness = 2
-    local BallScale = Instance.new("UIScale", FloatingBall) -- 控制悬浮球弹性缩放
+    local BallScale = Instance.new("UIScale", FloatingBall)
 
     table.insert(themeUpdateFunctions, function(t)
         FloatingBall.BackgroundColor3 = t.ElementBackground
@@ -204,7 +205,7 @@ function Library:CreateWindow(options)
     MainFrame.BorderSizePixel = 0
     MainFrame.ClipsDescendants = true
     MainFrame.Parent = ScreenGui
-    local MainScale = Instance.new("UIScale", MainFrame) -- 控制主界面弹性缩放
+    local MainScale = Instance.new("UIScale", MainFrame)
     
     AddCorner(MainFrame, 16)
     local MainStroke = Instance.new("UIStroke", MainFrame)
@@ -312,7 +313,7 @@ function Library:CreateWindow(options)
     MakeDraggable(TopBar, MainFrame)
     MakeDraggable(FloatingBall, FloatingBall)
 
-    -- >>> 新增：弹性展开/收回的核心逻辑 <<<
+    -- >>> 弹性展开/收回的核心逻辑 <<<
     local isUiOpen = true
     local isAnimating = false
 
@@ -331,14 +332,13 @@ function Library:CreateWindow(options)
         -- 2. 主界面弹性开关动画
         if isUiOpen then
             MainFrame.Visible = true
-            MainScale.Scale = 0 -- 从 0 开始放大
+            MainScale.Scale = 0
             local openTween = TweenService:Create(MainScale, TweenInfo.new(0.4, Enum.EasingStyle.Back, Enum.EasingDirection.Out), {Scale = 1})
             openTween:Play()
             openTween.Completed:Connect(function()
                 isAnimating = false
             end)
         else
-            -- 收起时用 Back In 效果
             local closeTween = TweenService:Create(MainScale, TweenInfo.new(0.3, Enum.EasingStyle.Back, Enum.EasingDirection.In), {Scale = 0})
             closeTween:Play()
             closeTween.Completed:Connect(function()
@@ -366,21 +366,53 @@ function Library:CreateWindow(options)
         end
     end
 
+    -- 渐变动画相关变量
     local gradientAnimConn
+    local colorCycleConn
+
     local function stopGradientAnimation()
         if gradientAnimConn then
             gradientAnimConn:Disconnect()
             gradientAnimConn = nil
         end
+        if colorCycleConn then
+            colorCycleConn:Disconnect()
+            colorCycleConn = nil
+        end
     end
     
-    local function startGradientAnimation(grad)
+    local function startGradientAnimation(grad, themeName)
         stopGradientAnimation()
         if not grad then return end
+        
+        -- 旋转动画
         gradientAnimConn = RunService.RenderStepped:Connect(function(dt)
             if not grad.Parent then stopGradientAnimation() return end
-            grad.Rotation = (grad.Rotation + dt * 45) % 360
+            grad.Rotation = (grad.Rotation + dt * 30) % 360
         end)
+        
+        -- Apple 风格动态色彩循环（仅 WarmGradient 主题启用）
+        if themeName == "WarmGradient" then
+            local startTime = os.clock()
+            colorCycleConn = RunService.RenderStepped:Connect(function()
+                if not grad.Parent then stopGradientAnimation() return end
+                local elapsed = os.clock() - startTime
+                -- 使用正弦波生成平滑流动的色相
+                local hue1 = (elapsed * 0.08) % 1
+                local hue2 = (hue1 + 0.15) % 1
+                local hue3 = (hue1 + 0.3) % 1
+                
+                local color1 = Color3.fromHSV(hue1, 0.7, 0.95)
+                local color2 = Color3.fromHSV(hue2, 0.8, 0.9)
+                local color3 = Color3.fromHSV(hue3, 0.9, 0.85)
+                
+                grad.Color = ColorSequence.new({
+                    ColorSequenceKeypoint.new(0, color1),
+                    ColorSequenceKeypoint.new(0.5, color2),
+                    ColorSequenceKeypoint.new(1, color3)
+                })
+            end)
+        end
     end
 
     function Window:ApplyTheme(themeName)
@@ -394,7 +426,7 @@ function Library:CreateWindow(options)
         if Theme.Gradient then
             local newGrad = Theme.Gradient:Clone()
             newGrad.Parent = MainFrame
-            startGradientAnimation(newGrad)
+            startGradientAnimation(newGrad, themeName) -- 传入主题名称以启用色彩循环
         else
             stopGradientAnimation()
         end
@@ -859,6 +891,265 @@ function Library:CreateWindow(options)
                 currentDropdown.conn = conn
             end)
             return DropdownFrame
+        end
+
+        -- ******************** 新增高级控件 ********************
+
+        -- 图片显示控件（内嵌图片）
+        function Elements:CreateImage(imageId, sizeX, sizeY)
+            local img = Instance.new("ImageLabel")
+            img.Name = "ImageElement"
+            img.Size = UDim2.new(0, sizeX or 100, 0, sizeY or 100)
+            img.BackgroundColor3 = Theme.ElementBackground
+            img.Image = imageId or ""
+            img.ScaleType = Enum.ScaleType.Fit
+            img.Parent = TabPage
+            AddCorner(img, 8)
+            table.insert(themeUpdateFunctions, function(t)
+                img.BackgroundColor3 = t.ElementBackground
+            end)
+            return img
+        end
+
+        -- 颜色选择器 (带 RGB 滑块)
+        function Elements:CreateColorPicker(text, defaultColor, callback)
+            local currentColor = defaultColor or Color3.fromRGB(255, 255, 255)
+            local pickerFrame = Instance.new("Frame")
+            pickerFrame.Size = UDim2.new(1, 0, 0, 40)
+            pickerFrame.BackgroundColor3 = Theme.ElementBackground
+            pickerFrame.Parent = TabPage
+            AddCorner(pickerFrame, 8)
+
+            local label = Instance.new("TextLabel")
+            label.Size = UDim2.new(0.5, -20, 1, 0)
+            label.Position = UDim2.new(0, 10, 0, 0)
+            label.BackgroundTransparency = 1
+            label.Text = text
+            label.TextColor3 = Theme.TextColor
+            label.Font = Enum.Font.Gotham
+            label.TextSize = 14
+            label.TextXAlignment = Enum.TextXAlignment.Left
+            label.Parent = pickerFrame
+
+            local colorPreview = Instance.new("TextButton")
+            colorPreview.Size = UDim2.new(0, 60, 0, 28)
+            colorPreview.AnchorPoint = Vector2.new(1, 0.5)
+            colorPreview.Position = UDim2.new(1, -10, 0.5, 0)
+            colorPreview.BackgroundColor3 = currentColor
+            colorPreview.Text = ""
+            colorPreview.Parent = pickerFrame
+            AddCorner(colorPreview, 6)
+            local previewStroke = Instance.new("UIStroke", colorPreview)
+            previewStroke.Color = Theme.Accent
+            previewStroke.Thickness = 1
+
+            local function apply(t)
+                pickerFrame.BackgroundColor3 = t.ElementBackground
+                label.TextColor3 = t.TextColor
+                colorPreview.BackgroundColor3 = currentColor
+                previewStroke.Color = t.Accent
+            end
+            table.insert(themeUpdateFunctions, apply)
+
+            local pickerPopup = nil
+            colorPreview.MouseButton1Click:Connect(function()
+                if pickerPopup then pickerPopup:Destroy() end
+                -- 弹出颜色选择面板
+                pickerPopup = Instance.new("Frame")
+                pickerPopup.Size = UDim2.new(0, 220, 0, 180)
+                pickerPopup.Position = UDim2.new(0, colorPreview.AbsolutePosition.X - 160, 0, colorPreview.AbsolutePosition.Y + 32)
+                pickerPopup.BackgroundColor3 = Theme.ElementBackground
+                pickerPopup.BorderSizePixel = 0
+                pickerPopup.ZIndex = 200
+                pickerPopup.Parent = ScreenGui
+                AddCorner(pickerPopup, 10)
+                local popupStroke = Instance.new("UIStroke", pickerPopup)
+                popupStroke.Color = Theme.Accent
+                popupStroke.Thickness = 1
+
+                -- R, G, B 滑块
+                local function createChannelSlider(name, channelValue, yPos)
+                    local channelLabel = Instance.new("TextLabel")
+                    channelLabel.Size = UDim2.new(0, 20, 0, 16)
+                    channelLabel.Position = UDim2.new(0, 10, 0, yPos)
+                    channelLabel.BackgroundTransparency = 1
+                    channelLabel.Text = name
+                    channelLabel.TextColor3 = Theme.TextColor
+                    channelLabel.Font = Enum.Font.GothamBold
+                    channelLabel.TextSize = 13
+                    channelLabel.TextXAlignment = Enum.TextXAlignment.Left
+                    channelLabel.Parent = pickerPopup
+
+                    local bar = Instance.new("Frame")
+                    bar.Size = UDim2.new(1, -60, 0, 16)
+                    bar.Position = UDim2.new(0, 35, 0, yPos)
+                    bar.BackgroundColor3 = Color3.fromRGB(50,50,50)
+                    bar.Parent = pickerPopup
+                    AddCorner(bar, 8)
+
+                    local fill = Instance.new("Frame")
+                    fill.Size = UDim2.new(channelValue/255, 0, 1, 0)
+                    fill.BackgroundColor3 = (name == "R" and Color3.fromRGB(255,0,0)) or
+                                           (name == "G" and Color3.fromRGB(0,255,0)) or
+                                           Color3.fromRGB(0,0,255)
+                    fill.Parent = bar
+                    AddCorner(fill, 8)
+
+                    local btn = Instance.new("TextButton")
+                    btn.Size = UDim2.new(1, 0, 1, 0)
+                    btn.BackgroundTransparency = 1
+                    btn.Text = ""
+                    btn.Parent = bar
+
+                    local dragging = false
+                    local function update(input)
+                        local pos = math.clamp(input.Position.X - bar.AbsolutePosition.X, 0, bar.AbsoluteSize.X)
+                        local val = math.floor(pos / bar.AbsoluteSize.X * 255)
+                        fill.Size = UDim2.new(val/255, 0, 1, 0)
+                        if name == "R" then currentColor = Color3.fromRGB(val, currentColor.G*255, currentColor.B*255)
+                        elseif name == "G" then currentColor = Color3.fromRGB(currentColor.R*255, val, currentColor.B*255)
+                        else currentColor = Color3.fromRGB(currentColor.R*255, currentColor.G*255, val) end
+                        colorPreview.BackgroundColor3 = currentColor
+                        pcall(callback, currentColor)
+                    end
+                    btn.InputBegan:Connect(function(input)
+                        if input.UserInputType == Enum.UserInputType.MouseButton1 or input.UserInputType == Enum.UserInputType.Touch then
+                            dragging = true
+                            update(input)
+                        end
+                    end)
+                    UserInputService.InputEnded:Connect(function(input)
+                        if input.UserInputType == Enum.UserInputType.MouseButton1 or input.UserInputType == Enum.UserInputType.Touch then
+                            dragging = false
+                        end
+                    end)
+                    UserInputService.InputChanged:Connect(function(input)
+                        if dragging and (input.UserInputType == Enum.UserInputType.MouseMovement or input.UserInputType == Enum.UserInputType.Touch) then
+                            update(input)
+                        end
+                    end)
+                    return bar, fill
+                end
+
+                createChannelSlider("R", currentColor.R*255, 10)
+                createChannelSlider("G", currentColor.G*255, 40)
+                createChannelSlider("B", currentColor.B*255, 70)
+
+                local closeBtn = Instance.new("TextButton")
+                closeBtn.Size = UDim2.new(1, -20, 0, 30)
+                closeBtn.Position = UDim2.new(0, 10, 0, 105)
+                closeBtn.BackgroundColor3 = Theme.Accent
+                closeBtn.Text = "确认"
+                closeBtn.TextColor3 = Color3.fromRGB(255,255,255)
+                closeBtn.Font = Enum.Font.GothamSemibold
+                closeBtn.TextSize = 14
+                closeBtn.Parent = pickerPopup
+                AddCorner(closeBtn, 8)
+                closeBtn.MouseButton1Click:Connect(function()
+                    pickerPopup:Destroy()
+                    pickerPopup = nil
+                end)
+                -- 点击遮罩关闭
+                local closeConn
+                closeConn = DropdownOverlay.MouseButton1Click:Connect(function()
+                    if pickerPopup then
+                        pickerPopup:Destroy()
+                        pickerPopup = nil
+                        if closeConn then closeConn:Disconnect() end
+                    end
+                end)
+            end)
+            return pickerFrame
+        end
+
+        -- 按键绑定控件
+        function Elements:CreateKeybind(text, defaultKey, callback)
+            local currentKey = defaultKey or Enum.KeyCode.E
+            local keybindFrame = Instance.new("Frame")
+            keybindFrame.Size = UDim2.new(1, 0, 0, 35)
+            keybindFrame.BackgroundColor3 = Theme.ElementBackground
+            keybindFrame.Parent = TabPage
+            AddCorner(keybindFrame, 8)
+
+            local label = Instance.new("TextLabel")
+            label.Size = UDim2.new(0.6, -20, 1, 0)
+            label.Position = UDim2.new(0, 10, 0, 0)
+            label.BackgroundTransparency = 1
+            label.Text = text
+            label.TextColor3 = Theme.TextColor
+            label.Font = Enum.Font.Gotham
+            label.TextSize = 14
+            label.TextXAlignment = Enum.TextXAlignment.Left
+            label.Parent = keybindFrame
+
+            local bindButton = Instance.new("TextButton")
+            bindButton.Size = UDim2.new(0, 100, 0, 28)
+            bindButton.AnchorPoint = Vector2.new(1, 0.5)
+            bindButton.Position = UDim2.new(1, -10, 0.5, 0)
+            bindButton.BackgroundColor3 = Color3.fromRGB(230, 230, 230)
+            bindButton.Text = currentKey.Name
+            bindButton.TextColor3 = Theme.ElementTextColor
+            bindButton.Font = Enum.Font.GothamSemibold
+            bindButton.TextSize = 13
+            bindButton.Parent = keybindFrame
+            AddCorner(bindButton, 6)
+
+            local function apply(t)
+                keybindFrame.BackgroundColor3 = t.ElementBackground
+                label.TextColor3 = t.TextColor
+                bindButton.TextColor3 = t.ElementTextColor
+            end
+            table.insert(themeUpdateFunctions, apply)
+
+            local listening = false
+            bindButton.MouseButton1Click:Connect(function()
+                if listening then return end
+                listening = true
+                bindButton.Text = "..." 
+                local conn
+                conn = UserInputService.InputBegan:Connect(function(input, gameProcessed)
+                    if gameProcessed then return end
+                    if input.UserInputType == Enum.UserInputType.Keyboard then
+                        currentKey = input.KeyCode
+                        bindButton.Text = currentKey.Name
+                        listening = false
+                        conn:Disconnect()
+                        pcall(callback, currentKey)
+                    end
+                end)
+            end)
+
+            UserInputService.InputBegan:Connect(function(input, gameProcessed)
+                if not gameProcessed and input.KeyCode == currentKey then
+                    pcall(callback, currentKey)
+                end
+            end)
+            return keybindFrame
+        end
+
+        -- 段落/多行文本控件
+        function Elements:CreateParagraph(text, lines)
+            local paragraphFrame = Instance.new("Frame")
+            paragraphFrame.Size = UDim2.new(1, 0, 0, (lines or 2) * 24 + 12)
+            paragraphFrame.BackgroundColor3 = Theme.ElementBackground
+            paragraphFrame.Parent = TabPage
+            AddCorner(paragraphFrame, 8)
+            local paraLabel = Instance.new("TextLabel")
+            paraLabel.Size = UDim2.new(1, -20, 1, -12)
+            paraLabel.Position = UDim2.new(0, 10, 0, 6)
+            paraLabel.BackgroundTransparency = 1
+            paraLabel.Text = text
+            paraLabel.TextColor3 = Theme.TextColor
+            paraLabel.Font = Enum.Font.Gotham
+            paraLabel.TextSize = 14
+            paraLabel.TextXAlignment = Enum.TextXAlignment.Left
+            paraLabel.TextWrapped = true
+            paraLabel.Parent = paragraphFrame
+            table.insert(themeUpdateFunctions, function(t)
+                paragraphFrame.BackgroundColor3 = t.ElementBackground
+                paraLabel.TextColor3 = t.TextColor
+            end)
+            return paragraphFrame
         end
 
         return Elements
