@@ -1,6 +1,6 @@
 --[[
-    精美自适应通用 UI 库 v3.7 (色板联动整体主题)
-    颜色选择器现在自动生成全套界面配色，背景/侧边栏/元素/文字全部跟随
+    精美自适应通用 UI 库 v3.7.1 (主题整体联动 + 图标背景可配)
+    优化：色板取色器联动整套界面配色、悬浮球/标签图标支持自定义背景、快捷键稳定
 ]]
 
 local UserInputService = game:GetService("UserInputService")
@@ -357,16 +357,14 @@ function Library:CreateWindow(options)
         end
     end
 
-    -- 核心：从色板颜色生成整套主题
+    -- 核心：色板联动整套主题
     function Window:SetAccentColor(color)
-        -- 自动生成协调的界面配色
         local h, s, v = color:ToHSV()
         Theme.Accent = color
         Theme.MainBackground = Color3.fromHSV(h, s * 0.12, math.min(v + 0.35, 1))
         Theme.SidebarBackground = Color3.fromHSV(h, s * 0.18, math.min(v + 0.25, 1))
         Theme.ElementBackground = Color3.fromHSV(h, s * 0.08, math.min(v + 0.4, 1))
         Theme.TopBarBackground = Color3.fromHSV(h, s * 0.05, math.min(v + 0.45, 1))
-        -- 文字颜色：根据背景亮度自动选择深色/浅色
         local bg = Theme.MainBackground
         local luminance = 0.299*bg.R + 0.587*bg.G + 0.114*bg.B
         local textColor = luminance > 0.55 and Color3.fromRGB(30,30,30) or Color3.fromRGB(240,240,240)
@@ -376,7 +374,6 @@ function Library:CreateWindow(options)
         Theme.ToggleOffColor = Color3.fromHSV(h, s * 0.05, math.min(v + 0.2, 1))
         Theme.DividerColor = Color3.fromHSV(h, s * 0.08, math.min(v + 0.3, 1))
 
-        -- 刷新所有UI
         for _, func in ipairs(themeUpdateFunctions) do
             func(Theme)
         end
@@ -434,7 +431,9 @@ function Library:CreateWindow(options)
         end)
     end
 
-    function Window:CreateTab(TabName, iconId)
+    -- 标签页创建（新增图标选项）
+    function Window:CreateTab(TabName, iconId, iconOptions)
+        -- iconOptions 表可包含：BackgroundColor3, BackgroundTransparency, ImageColor3, Size
         local TabButton = Instance.new("TextButton")
         TabButton.Name = TabName
         TabButton.Size = UDim2.new(0.9, 0, 0, 30)
@@ -456,11 +455,29 @@ function Library:CreateWindow(options)
         listLayout.Padding = UDim.new(0, 5)
         listLayout.Parent = contentHolder
 
+        -- 图标（可自定义背景）
         if iconId then
+            if type(iconId) == "table" then  -- 兼容旧格式
+                iconOptions = iconId
+                iconId = iconOptions.Image
+            end
             local icon = Instance.new("ImageLabel")
-            icon.Size = UDim2.new(0, 18, 0, 18)
+            local defaultSize = UDim2.new(0, 18, 0, 18)
+            if iconOptions and iconOptions.Size then
+                defaultSize = iconOptions.Size
+            end
+            icon.Size = defaultSize
             icon.Image = iconId
-            icon.BackgroundTransparency = 1
+            -- 背景设置：默认完全透明，可通过 iconOptions 覆盖
+            if iconOptions and iconOptions.BackgroundColor3 then
+                icon.BackgroundColor3 = iconOptions.BackgroundColor3
+                icon.BackgroundTransparency = iconOptions.BackgroundTransparency or 0
+            else
+                icon.BackgroundTransparency = 1
+            end
+            if iconOptions and iconOptions.ImageColor3 then
+                icon.ImageColor3 = iconOptions.ImageColor3
+            end
             icon.Parent = contentHolder
         end
 
@@ -542,7 +559,7 @@ function Library:CreateWindow(options)
 
         local Elements = {}
 
-        -- ============ 基础控件 (不变) ============
+        -- ========== 基础控件（不变） ==========
         function Elements:CreateLabel(text)
             local LabelFrame = Instance.new("Frame")
             LabelFrame.Size = UDim2.new(1, 0, 0, 30)
@@ -872,7 +889,7 @@ function Library:CreateWindow(options)
             return DropdownFrame
         end
 
-        -- ============ 高级控件 ============
+        -- ========== 高级控件 ==========
         function Elements:CreateImage(imageId, sizeX, sizeY)
             local img = Instance.new("ImageLabel")
             img.Name = "ImageElement"
@@ -942,7 +959,6 @@ function Library:CreateWindow(options)
                 popupStroke.Color = Theme.Accent
                 popupStroke.Thickness = 1
 
-                -- 饱和度/明度区
                 local svBox = Instance.new("ImageButton")
                 svBox.Size = UDim2.new(0, 180, 0, 180)
                 svBox.Position = UDim2.new(0, 8, 0, 8)
@@ -970,7 +986,6 @@ function Library:CreateWindow(options)
                     NumberSequenceKeypoint.new(1, 1)
                 })
 
-                -- 色相条
                 local hueBar = Instance.new("ImageButton")
                 hueBar.Size = UDim2.new(0, 22, 0, 180)
                 hueBar.Position = UDim2.new(0, 194, 0, 8)
@@ -990,7 +1005,6 @@ function Library:CreateWindow(options)
                 })
                 hueGrad.Rotation = 90
 
-                -- 指示器
                 local svIndicator = Instance.new("Frame")
                 svIndicator.Size = UDim2.new(0, 10, 0, 10)
                 svIndicator.AnchorPoint = Vector2.new(0.5, 0.5)
@@ -1020,7 +1034,7 @@ function Library:CreateWindow(options)
                     local newColor = Color3.fromHSV(h, s, v)
                     currentColor = newColor
                     colorPreview.BackgroundColor3 = currentColor
-                    pcall(callback, currentColor)  -- 这里会调用 Window:SetAccentColor，从而联动整体主题
+                    pcall(callback, currentColor)
                 end
 
                 local function updateSV(input)
