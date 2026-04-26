@@ -175,7 +175,11 @@ local function createRender(entity, options)
         beam.Attachment0 = RayOriginAttachment
         beam.Attachment1 = targetAttach
         beam.Enabled = false
-        beam.Parent = Container  -- Container 实际在 CoreGui/PlayerGui 不影响，因为附件在 Workspace
+        
+        -- 【修改点】：Beam 必须在 Workspace 里面才能正常渲染
+        -- 将其父节点设为 targetAttach (因为它在 Workspace 的目标角色内)
+        beam.Parent = targetAttach 
+        
         render.Beam = beam
         render.TargetAttachment = targetAttach
     end
@@ -291,7 +295,8 @@ local function updateRender(render, entity, extraData)
 
     -- 射线：独立于 ESP 总开关，只要 show 且 ShowRay 就显示
     if render.Beam then
-        render.Beam.Enabled = show and ESP.Settings.ShowRay
+        -- 【修改点】：增加 localRoot ~= nil 判断。如果本地玩家死了没有身体，不显示射线以防止射线射向虚空
+        render.Beam.Enabled = show and ESP.Settings.ShowRay and (localRoot ~= nil)
         if render.Beam.Enabled then
             render.Beam.Color = ColorSequence.new(ESP.Settings.RayColor)
             render.Beam.Width0 = ESP.Settings.RayWidth
