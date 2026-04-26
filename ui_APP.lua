@@ -1,3 +1,8 @@
+--[[
+    精美自适应通用 UI 库 v1.0.2 (液态玻璃主题)
+    LS Team 开发
+    新增：Apple 风格“液态玻璃”主题（毛玻璃效果），不破坏现有布局
+]]
 
 local UserInputService = game:GetService("UserInputService")
 local TweenService = game:GetService("TweenService")
@@ -98,6 +103,25 @@ Library.Themes = {
         ElementTextColor = Color3.fromRGB(90, 45, 45),
         ToggleOffColor = Color3.fromRGB(220, 190, 190),
         DividerColor = Color3.fromRGB(230, 210, 210)
+    },
+
+    -- ★ 新增：液态玻璃主题 (毛玻璃效果)
+    LiquidGlass = {
+        Accent = Color3.fromRGB(100, 200, 255),        -- 柔和的蓝
+        MainBackground = Color3.fromRGB(255, 255, 255),
+        SidebarBackground = Color3.fromRGB(255, 255, 255),
+        ElementBackground = Color3.fromRGB(245, 245, 245),
+        TopBarBackground = Color3.fromRGB(255, 255, 255),
+        TextColor = Color3.fromRGB(30, 30, 30),
+        TitleTextColor = Color3.fromRGB(20, 20, 20),
+        ElementTextColor = Color3.fromRGB(40, 40, 40),
+        ToggleOffColor = Color3.fromRGB(200, 200, 200),
+        DividerColor = Color3.fromRGB(220, 220, 220),
+
+        -- 毛玻璃专属属性
+        BackgroundTransparency = 0.65,    -- 半透明程度
+        BlurSize = 12,                    -- 模糊强度
+        IsLiquidGlass = true
     }
 }
 
@@ -108,11 +132,30 @@ function Library:CreateWindow(options)
     local floatingBallImage = options.FloatingBallImage  -- 可选
 
     local Theme = {}
+    -- ★ 修改：loadTheme 全量复制，支持任意额外字段
     local function loadTheme(name)
         local t = Library.Themes[name] or Library.Themes.Default
-        for k, _ in pairs(Library.Themes.Default) do
-            Theme[k] = t[k]
+        -- 清空 Theme 表，用新主题的键覆盖
+        for k in pairs(Theme) do
+            Theme[k] = nil
         end
+        for k, v in pairs(t) do
+            Theme[k] = v
+        end
+        -- 确保默认键存在（防止部分主题缺少字段导致 nil）
+        if Theme.MainBackground == nil then Theme.MainBackground = Color3.fromRGB(248,248,248) end
+        if Theme.SidebarBackground == nil then Theme.SidebarBackground = Color3.fromRGB(240,240,240) end
+        if Theme.ElementBackground == nil then Theme.ElementBackground = Color3.fromRGB(245,245,245) end
+        if Theme.TopBarBackground == nil then Theme.TopBarBackground = Color3.fromRGB(252,252,252) end
+        if Theme.TextColor == nil then Theme.TextColor = Color3.fromRGB(40,40,40) end
+        if Theme.TitleTextColor == nil then Theme.TitleTextColor = Color3.fromRGB(30,30,30) end
+        if Theme.ElementTextColor == nil then Theme.ElementTextColor = Color3.fromRGB(30,30,30) end
+        if Theme.ToggleOffColor == nil then Theme.ToggleOffColor = Color3.fromRGB(180,180,180) end
+        if Theme.DividerColor == nil then Theme.DividerColor = Color3.fromRGB(220,220,220) end
+        if Theme.Accent == nil then Theme.Accent = Color3.fromRGB(85,170,255) end
+        Theme.BackgroundTransparency = Theme.BackgroundTransparency or 0
+        Theme.BlurSize = Theme.BlurSize or 0
+        Theme.IsLiquidGlass = Theme.IsLiquidGlass or false
     end
     loadTheme(initialTheme)
 
@@ -185,7 +228,7 @@ function Library:CreateWindow(options)
     MainFrame.Size = UDim2.new(0.9, 0, 0.85, 0)
     MainFrame.BackgroundColor3 = Theme.MainBackground
     MainFrame.BorderSizePixel = 0
-    MainFrame.ClipsDescendants = true
+    MainFrame.ClipsDescendants = true   -- 注意：启用 ClipsDescendants 会使模糊仅作用于此区域
     MainFrame.Parent = ScreenGui
     local MainScale = Instance.new("UIScale", MainFrame)
 
@@ -199,10 +242,11 @@ function Library:CreateWindow(options)
     SizeConstraint.MinSize = Vector2.new(300, 250)
     SizeConstraint.Parent = MainFrame
 
-    table.insert(themeUpdateFunctions, function(t)
-        MainFrame.BackgroundColor3 = t.MainBackground
-        MainStroke.Color = t.Accent
-    end)
+    -- ★ 新增：为主框架添加毛玻璃效果 (UIBlurEffect)
+    local mainBlur = Instance.new("UIBlurEffect")
+    mainBlur.Size = UDim2.new(1, 0, 1, 0)
+    mainBlur.Enabled = false
+    mainBlur.Parent = MainFrame
 
     -- 顶部栏
     local TopBar = Instance.new("Frame")
@@ -235,12 +279,11 @@ function Library:CreateWindow(options)
     TitleLabel.TextXAlignment = Enum.TextXAlignment.Left
     TitleLabel.Parent = TopBar
 
-    table.insert(themeUpdateFunctions, function(t)
-        TopBar.BackgroundColor3 = t.TopBarBackground
-        BottomHideFrame.BackgroundColor3 = t.TopBarBackground
-        TopDivider.BackgroundColor3 = t.DividerColor
-        TitleLabel.TextColor3 = t.TitleTextColor
-    end)
+    -- ★ 为顶栏添加模糊
+    local topBlur = Instance.new("UIBlurEffect")
+    topBlur.Size = UDim2.new(1, 0, 1, 0)
+    topBlur.Enabled = false
+    topBlur.Parent = TopBar
 
     -- 侧边栏
     local Sidebar = Instance.new("Frame")
@@ -265,7 +308,13 @@ function Library:CreateWindow(options)
     SideDivider.BorderSizePixel = 0
     SideDivider.Parent = Sidebar
 
-    -- 修复：侧边栏标签容器，动态 CanvasSize 避免多余滚动
+    -- ★ 为侧边栏添加模糊
+    local sidebarBlur = Instance.new("UIBlurEffect")
+    sidebarBlur.Size = UDim2.new(1, 0, 1, 0)
+    sidebarBlur.Enabled = false
+    sidebarBlur.Parent = Sidebar
+
+    -- 侧边栏标签容器
     local TabContainer = Instance.new("ScrollingFrame")
     TabContainer.Size = UDim2.new(1, 0, 1, -10)
     TabContainer.Position = UDim2.new(0, 0, 0, 5)
@@ -280,15 +329,8 @@ function Library:CreateWindow(options)
     TabListLayout.HorizontalAlignment = Enum.HorizontalAlignment.Center
     TabListLayout.Parent = TabContainer
 
-    -- 关键修复：根据内容高度实时调整 CanvasSize，防止空白滚动
     TabListLayout:GetPropertyChangedSignal("AbsoluteContentSize"):Connect(function()
         TabContainer.CanvasSize = UDim2.new(0, 0, 0, TabListLayout.AbsoluteContentSize.Y)
-    end)
-
-    table.insert(themeUpdateFunctions, function(t)
-        Sidebar.BackgroundColor3 = t.SidebarBackground
-        RightHideFrame.BackgroundColor3 = t.SidebarBackground
-        SideDivider.BackgroundColor3 = t.DividerColor
     end)
 
     -- 内容区
@@ -300,6 +342,58 @@ function Library:CreateWindow(options)
 
     MakeDraggable(TopBar, MainFrame)
     MakeDraggable(FloatingBall, FloatingBall)
+
+    -- ★ 毛玻璃核心更新函数：控制 BlurEffect 开关 + 容器透明度
+    table.insert(themeUpdateFunctions, function(t)
+        local isGlass = t.IsLiquidGlass
+        local blurSize = t.BlurSize or 0
+        local transparency = t.BackgroundTransparency or 0
+
+        -- 主框架模糊+透明度
+        mainBlur.Enabled = isGlass
+        mainBlur.Size = UDim2.new(1, 0, 1, 0)  -- 全尺寸
+        MainFrame.BackgroundTransparency = transparency
+        MainFrame.BackgroundColor3 = t.MainBackground
+
+        -- 顶栏模糊+透明度
+        topBlur.Enabled = isGlass
+        TopBar.BackgroundTransparency = transparency
+        TopBar.BackgroundColor3 = t.TopBarBackground
+        BottomHideFrame.BackgroundColor3 = t.TopBarBackground
+        BottomHideFrame.BackgroundTransparency = transparency
+
+        -- 侧边栏模糊+透明度
+        sidebarBlur.Enabled = isGlass
+        Sidebar.BackgroundTransparency = transparency
+        Sidebar.BackgroundColor3 = t.SidebarBackground
+        RightHideFrame.BackgroundColor3 = t.SidebarBackground
+        RightHideFrame.BackgroundTransparency = transparency
+
+        -- 描边颜色保持 Accent
+        MainStroke.Color = t.Accent
+        TopDivider.BackgroundColor3 = t.DividerColor
+        SideDivider.BackgroundColor3 = t.DividerColor
+    end)
+
+    -- 原有的其他主题更新（颜色方面）
+    table.insert(themeUpdateFunctions, function(t)
+        if not Theme.IsLiquidGlass then
+            -- 非玻璃主题恢复默认不透明
+            MainFrame.BackgroundTransparency = 0
+            TopBar.BackgroundTransparency = 0
+            BottomHideFrame.BackgroundTransparency = 0
+            Sidebar.BackgroundTransparency = 0
+            RightHideFrame.BackgroundTransparency = 0
+        end
+        TopBar.BackgroundColor3 = t.TopBarBackground
+        BottomHideFrame.BackgroundColor3 = t.TopBarBackground
+        TopDivider.BackgroundColor3 = t.DividerColor
+        TitleLabel.TextColor3 = t.TitleTextColor
+
+        Sidebar.BackgroundColor3 = t.SidebarBackground
+        RightHideFrame.BackgroundColor3 = t.SidebarBackground
+        SideDivider.BackgroundColor3 = t.DividerColor
+    end)
 
     -- 弹性展开/收回
     local isUiOpen = true
@@ -362,7 +456,7 @@ function Library:CreateWindow(options)
         end
     end
 
-    -- 核心：色板联动整套主题
+    -- 核心：色板联动整套主题（保留液态玻璃属性）
     function Window:SetAccentColor(color)
         local h, s, v = color:ToHSV()
         Theme.Accent = color
@@ -378,6 +472,9 @@ function Library:CreateWindow(options)
         Theme.ElementTextColor = textColor
         Theme.ToggleOffColor = Color3.fromHSV(h, s * 0.05, math.min(v + 0.2, 1))
         Theme.DividerColor = Color3.fromHSV(h, s * 0.08, math.min(v + 0.3, 1))
+
+        -- 保留液态玻璃的透明度和模糊设定
+        -- (已在 loadTheme 中初始化，此处不再改动)
 
         for _, func in ipairs(themeUpdateFunctions) do
             func(Theme)
@@ -990,7 +1087,7 @@ function Library:CreateWindow(options)
             colorPreview.MouseButton1Click:Connect(function()
                 if pickerPopup then pickerPopup:Destroy() end
                 pickerPopup = Instance.new("Frame")
-                pickerPopup.Size = UDim2.new(0, 224, 0, 218) -- 高度增加 18 给拖动条
+                pickerPopup.Size = UDim2.new(0, 224, 0, 218)
                 pickerPopup.Position = UDim2.new(0, colorPreview.AbsolutePosition.X - 160, 0, colorPreview.AbsolutePosition.Y + 32)
                 pickerPopup.BackgroundColor3 = Theme.ElementBackground
                 pickerPopup.BorderSizePixel = 0
@@ -1001,7 +1098,6 @@ function Library:CreateWindow(options)
                 popupStroke.Color = Theme.Accent
                 popupStroke.Thickness = 1
 
-                -- ★ 新增拖动手柄 ★
                 local DragBar = Instance.new("TextButton")
                 DragBar.Size = UDim2.new(1, 0, 0, 18)
                 DragBar.Position = UDim2.new(0, 0, 0, 0)
@@ -1013,10 +1109,8 @@ function Library:CreateWindow(options)
                 DragBar.TextSize = 11
                 DragBar.Parent = pickerPopup
                 AddCorner(DragBar, 10)
-                -- 使整个色板可拖动
                 MakeDraggable(DragBar, pickerPopup)
 
-                -- 饱和度/明度区 (向下偏移 22 像素)
                 local svBox = Instance.new("ImageButton")
                 svBox.Size = UDim2.new(0, 180, 0, 180)
                 svBox.Position = UDim2.new(0, 8, 0, 26)
@@ -1044,7 +1138,6 @@ function Library:CreateWindow(options)
                     NumberSequenceKeypoint.new(1, 1)
                 })
 
-                -- 色相条 (向下偏移 22 像素)
                 local hueBar = Instance.new("ImageButton")
                 hueBar.Size = UDim2.new(0, 22, 0, 180)
                 hueBar.Position = UDim2.new(0, 194, 0, 26)
@@ -1140,7 +1233,6 @@ function Library:CreateWindow(options)
                     end
                 end)
 
-                -- 完成按钮 (向下偏移 26 像素)
                 local closeBtn = Instance.new("TextButton")
                 closeBtn.Size = UDim2.new(1, -16, 0, 26)
                 closeBtn.Position = UDim2.new(0, 8, 0, 188)
