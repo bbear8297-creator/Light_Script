@@ -1,7 +1,6 @@
--- Robust ESP Library v2.0
--- 基于 Roblox 官方 API 与最佳实践重构
--- 内置玩家信息/物体ESP/动态数值更新/性能优化
--- 依赖: 无 (仅使用 Roblox 内置服务)
+-- Robust ESP Library v2.1
+-- 修复射线、重生、性能、动态更新
+-- 放置于您的仓库 ESP_lib.lua
 
 local Players = game:GetService("Players")
 local RunService = game:GetService("RunService")
@@ -10,30 +9,23 @@ local Workspace = game:GetService("Workspace")
 
 local LocalPlayer = Players.LocalPlayer
 
--- 辅助函数: 安全销毁实例
+-- 辅助函数
 local function safeDestroy(obj)
-    if obj then
-        pcall(function() obj:Destroy() end)
-    end
+    if obj then pcall(function() obj:Destroy() end) end
 end
 
--- 辅助函数: 安全断开连接
 local function safeDisconnect(conn)
-    if conn then
-        pcall(function() conn:Disconnect() end)
-    end
+    if conn then pcall(function() conn:Disconnect() end) end
 end
 
--- 辅助函数: 获取角色根部件
 local function getRoot(character)
     if not character then return nil end
     return character:FindFirstChild("HumanoidRootPart")
         or character:FindFirstChild("Head")
-        or character:FindFirstChild("Torso")
         or character:FindFirstChildWhichIsA("BasePart")
 end
 
--- ESP 主类
+-- 容器
 local ESP = {}
 ESP._enabled = false
 ESP.Settings = {
@@ -41,76 +33,79 @@ ESP.Settings = {
     ShowHealth = true,
     ShowDistance = false,
     ShowRay = false,
-    Color = Color3.fromRGB(255, 255, 255),
+    RayColor = Color3.fromRGB(255, 255, 255),
+    RayWidth = 0.1,
+    RayTransparency = 0.2,
+    DefaultColor = Color3.fromRGB(255, 255, 255),
     UseTeamColor = false,
     MaxDistance = 1000,
     UpdateInterval = 0.1,
     HealthGetter = nil
 }
-ESP.Active = {}     -- [player] = renderData
-ESP.Objects = {}    -- [instance] = renderData
 
--- 创建容器
+ESP.Players = {}   -- [Player] = RenderData
+ESP.Objects = {}   -- [Instance] = RenderData
+
+-- 创建稳定容器（CoreGui 优先）
 local function createContainer()
-    local container = Instance.new("Folder")
-    container.Name = "ESP_Container_Robust"
-    pcall(function()
-        container.Parent = CoreGui
-    end)
-    if not container.Parent then
-        container.Parent = LocalPlayer:WaitForChild("PlayerGui", 10) or Workspace
+    local folder = Instance.new("Folder")
+    folder.Name = "ESP_Robust_Container"
+    pcall(function() folder.Parent = CoreGui end)
+    if not folder.Parent then
+        folder.Parent = LocalPlayer:WaitForChild("PlayerGui")
     end
-    return container
+    return folder
 end
+local Container = createContainer()
 
-local ESP_Container = createContainer()
-
--- 创建激光起点 Part (放在 Workspace 下解决不渲染问题)
-local function createLaserOriginPart()
+-- 射线原点在 Workspace 内（必须！否则 Beam 不渲染）
+local function createRayOrigin()
     local part = Instance.new("Part")
-    part.Name = "ESP_LaserOrigin"
+    part.Name = "ESP_RayOrigin"
     part.Anchored = true
     part.CanCollide = false
     part.Transparency = 1
     part.Size = Vector3.new(0.2, 0.2, 0.2)
-    part.CFrame = CFrame.new(0, -1000, 0) -- 隐藏在地下
+    part.CFrame = CFrame.new(0, -10000, 0)
     part.Parent = Workspace
-    return part
+
+    local attach = Instance.new("Attachment")
+    attach.Name = "OriginAttachment"
+    attach.Parent = part
+    return part, attach
 end
+local RayOriginPart, RayOriginAttachment = createRayOrigin()
 
-local LaserOriginPart = createLaserOriginPart()
-local LaserOriginAttachment = Instance.new("Attachment")
-LaserOriginAttachment.Name = "OriginAttachment"
-LaserOriginAttachment.Parent = LaserOriginPart
-
--- 更新激光起点位置
-local function updateLaserOrigin()
+-- 每帧更新射线起点到本地玩家位置
+local function updateRayOrigin()
     local char = LocalPlayer.Character
     local root = getRoot(char)
     if root then
-        LaserOriginPart.CFrame = root.CFrame
+        RayOriginPart.CFrame = root.CFrame
     else
-        LaserOriginPart.CFrame = CFrame.new(0, -1000, 0)
+        RayOriginPart.CFrame = CFrame.new(0, -10000, 0) -- 隐藏
     end
 end
 
--- 为单个目标创建视觉渲染
-local function createRender(playerOrInstance, options)
+-- 为实体创建视觉元素（玩家/物体通用）
+local function createRender(entity, options)
     options = options or {}
     local render = {}
+    local adornee = entity
+    local root = nil
 
-    -- 获取实际要依附的对象
-    local adornee = playerOrInstance
-    if playerOrInstance:IsA("Player") then
-        adornee = playerOrInstance.Character
+    if entity:IsA("Player") then
+        adornee = entity.Character
+        if not adornee then return nil end
+        root = getRoot(adornee)
+    elseif entity:IsA("Instance") then
+        root = getRoot(entity) or entity
+        if not root:IsA("BasePart") then return nil end
     end
 
-    if not adornee then return nil end
-
-    local root = getRoot(adornee)
     if not root then return nil end
 
-    -- 1. Highlight (官方 Highlight API)
+    -- 1. Highlight
     if options.Highlight ~= false then
         local hl = Instance.new("Highlight")
         hl.Adornee = adornee
@@ -118,11 +113,11 @@ local function createRender(playerOrInstance, options)
         hl.FillTransparency = 0.5
         hl.OutlineTransparency = 0.1
         hl.Enabled = false
-        hl.Parent = ESP_Container
+        hl.Parent = Container
         render.Highlight = hl
     end
 
-    -- 2. BillboardGui (官方 BillboardGui API)
+    -- 2. Billboard
     if options.Text ~= false then
         local bb = Instance.new("BillboardGui")
         bb.Adornee = root
@@ -130,7 +125,7 @@ local function createRender(playerOrInstance, options)
         bb.Size = UDim2.new(0, 200, 0, 50)
         bb.StudsOffset = Vector3.new(0, 3.5, 0)
         bb.Enabled = false
-        bb.Parent = ESP_Container
+        bb.Parent = Container
 
         local nameLabel = Instance.new("TextLabel")
         nameLabel.BackgroundTransparency = 1
@@ -165,24 +160,24 @@ local function createRender(playerOrInstance, options)
         render.DistanceLabel = distanceLabel
     end
 
-    -- 3. Beam (射线)
+    -- 3. Beam (射线) - 挂载到目标 Root 的 Attachment
     if options.Beam ~= false then
-        local targetAttachment = Instance.new("Attachment")
-        targetAttachment.Parent = root
+        local targetAttach = Instance.new("Attachment")
+        targetAttach.Parent = root
 
         local beam = Instance.new("Beam")
         beam.FaceCamera = true
-        beam.Width0 = 0.1
-        beam.Width1 = 0.1
+        beam.Width0 = ESP.Settings.RayWidth
+        beam.Width1 = ESP.Settings.RayWidth
         beam.LightEmission = 1
         beam.LightInfluence = 0
-        beam.Attachment0 = LaserOriginAttachment
-        beam.Attachment1 = targetAttachment
+        beam.Transparency = NumberSequence.new(ESP.Settings.RayTransparency)
+        beam.Attachment0 = RayOriginAttachment
+        beam.Attachment1 = targetAttach
         beam.Enabled = false
-        beam.Parent = ESP_Container
-
+        beam.Parent = Container  -- Container 实际在 CoreGui/PlayerGui 不影响，因为附件在 Workspace
         render.Beam = beam
-        render.TargetAttachment = targetAttachment
+        render.TargetAttachment = targetAttach
     end
 
     render.Root = root
@@ -190,34 +185,63 @@ local function createRender(playerOrInstance, options)
     return render
 end
 
--- 更新单个渲染对象
--- 这个函数现在支持外部传入的动态数值 (用于显示金币等)
-local function updateRender(render, entity, playerData)
+-- 销毁单个实体的所有视觉
+local function destroyRender(render)
+    if not render then return end
+    safeDestroy(render.Highlight)
+    safeDestroy(render.Billboard)
+    safeDestroy(render.Beam)
+    safeDestroy(render.TargetAttachment)
+end
+
+-- 更新单个实体渲染
+local function updateRender(render, entity, extraData)
     if not render or not render.Root then return end
 
-    local isPlayerEntity = entity:IsA("Player")
-    local character = isPlayerEntity and entity.Character or entity
-    local root = getRoot(character)
+    local isPlayer = entity:IsA("Player")
+    local character = isPlayer and entity.Character or entity
+    local root = getRoot(character) or (entity:IsA("BasePart") and entity)
+
+    -- 如果根部件换掉（重生/换模型）→ 重建整个 render
     if root and root ~= render.Root then
-        -- 根部件换了，重建渲染
-        safeDestroy(render.Highlight)
-        safeDestroy(render.Billboard)
-        safeDestroy(render.Beam)
-        safeDestroy(render.TargetAttachment)
-        render = createRender(entity, render.Options)
+        local opts = render.Options
+        destroyRender(render)
+        local newRender = createRender(entity, opts)
+        -- 替换旧引用
+        if isPlayer then
+            ESP.Players[entity] = newRender
+        else
+            if ESP.Objects[entity] then
+                ESP.Objects[entity].Render = newRender
+            end
+        end
+        render = newRender
         if not render then return end
     end
 
-    local dist = math.huge
-    local localRoot = getRoot(LocalPlayer.Character)
-    if root and localRoot then
-        dist = (root.Position - localRoot.Position).Magnitude
+    if not root then
+        -- 实体无效，隐藏所有
+        if render.Highlight then render.Highlight.Enabled = false end
+        if render.Billboard then render.Billboard.Enabled = false end
+        if render.Beam then render.Beam.Enabled = false end
+        return
     end
 
+    -- 距离判定
+    local localRoot = getRoot(LocalPlayer.Character)
+    local dist = math.huge
+    if localRoot and root then
+        dist = (root.Position - localRoot.Position).Magnitude
+    end
     local show = ESP._enabled and (dist <= ESP.Settings.MaxDistance)
-    local color = ESP.Settings.Color
-    if ESP.Settings.UseTeamColor and isPlayerEntity and entity.Team then
+
+    -- 颜色
+    local color = ESP.Settings.DefaultColor
+    if ESP.Settings.UseTeamColor and isPlayer and entity.Team then
         color = entity.Team.TeamColor.Color
+    end
+    if extraData and extraData.Color then
+        color = extraData.Color
     end
 
     -- Highlight
@@ -234,25 +258,26 @@ local function updateRender(render, entity, playerData)
     if render.NameLabel then
         render.NameLabel.Visible = show and ESP.Settings.ShowName
         if render.NameLabel.Visible then
-            render.NameLabel.Text = isPlayerEntity and entity.DisplayName or (playerData and playerData.Name or entity.Name)
+            local name = (extraData and extraData.Name) or (isPlayer and entity.DisplayName or (entity.Name or "???"))
+            render.NameLabel.Text = name
             render.NameLabel.TextColor3 = color
         end
     end
     if render.HealthLabel then
         render.HealthLabel.Visible = show and ESP.Settings.ShowHealth
         if render.HealthLabel.Visible then
-            local hp = "?"
-            if isPlayerEntity and entity.Character then
+            local healthText = "?"
+            if isPlayer and entity.Character then
                 local humanoid = entity.Character:FindFirstChildOfClass("Humanoid")
                 if humanoid then
-                    hp = math.floor(humanoid.Health) .. " / " .. math.floor(humanoid.MaxHealth)
+                    healthText = math.floor(humanoid.Health) .. " / " .. math.floor(humanoid.MaxHealth)
                 end
-            elseif playerData and playerData.Health then
-                hp = playerData.Health
+            elseif extraData and extraData.Health then
+                healthText = extraData.Health
             elseif ESP.Settings.HealthGetter then
-                hp = ESP.Settings.HealthGetter(entity)
+                healthText = ESP.Settings.HealthGetter(entity)
             end
-            render.HealthLabel.Text = "HP: " .. hp
+            render.HealthLabel.Text = healthText
             render.HealthLabel.TextColor3 = Color3.fromRGB(255, 100, 100)
         end
     end
@@ -264,11 +289,14 @@ local function updateRender(render, entity, playerData)
         end
     end
 
-    -- Beam
+    -- 射线：独立于 ESP 总开关，只要 show 且 ShowRay 就显示
     if render.Beam then
         render.Beam.Enabled = show and ESP.Settings.ShowRay
         if render.Beam.Enabled then
-            render.Beam.Color = ColorSequence.new(color)
+            render.Beam.Color = ColorSequence.new(ESP.Settings.RayColor)
+            render.Beam.Width0 = ESP.Settings.RayWidth
+            render.Beam.Width1 = ESP.Settings.RayWidth
+            render.Beam.Transparency = NumberSequence.new(ESP.Settings.RayTransparency)
         end
     end
 end
@@ -281,201 +309,169 @@ RunService.Heartbeat:Connect(function(dt)
     lastUpdate = lastUpdate + dt
     if lastUpdate >= ESP.Settings.UpdateInterval then
         lastUpdate = 0
-        updateLaserOrigin()
+        updateRayOrigin()
 
-        -- 更新所有玩家
-        for player, render in pairs(ESP.Active) do
+        -- 更新玩家
+        for player, render in pairs(ESP.Players) do
             updateRender(render, player)
         end
 
-        -- 更新所有物体 (支持动态数据刷新)
+        -- 更新物体（支持动态数据）
         for instance, data in pairs(ESP.Objects) do
-            local extraData = data.ExtraData
-            local render = data.Render
-            if extraData and extraData.Update then
-                -- 调用外部更新函数获取最新数据
-                extraData.Value = extraData.Update(instance)
+            local extra = data.ExtraData
+            if extra and extra.Update then
+                -- 调用更新函数获取最新数据
+                local ok, result = pcall(extra.Update, instance)
+                if ok and result then
+                    -- result 应包含 {Name=..., Health=..., Color=...} 等
+                    for k, v in pairs(result) do
+                        extra[k] = v
+                    end
+                end
             end
-            updateRender(render, instance, extraData)
+            updateRender(data.Render, instance, extra)
         end
     end
 end)
 
--- 玩家生命监测
-local function monitorCharacter(player)
-    local function onCharacterAdded(character)
-        local render = ESP.Active[player]
+-- 玩家生命周期管理
+local function onPlayerAdded(player)
+    if player == LocalPlayer or ESP.Players[player] then return end
+
+    local function setup()
+        local render = createRender(player, {Highlight = true, Text = true, Beam = true})
         if render then
-            render.Root = getRoot(character)
-        else
-            ESP:AddPlayer(player)
+            ESP.Players[player] = render
         end
     end
 
-    local function onCharacterRemoving()
-        local render = ESP.Active[player]
+    local function cleanup()
+        local render = ESP.Players[player]
         if render then
-            safeDestroy(render.Highlight)
-            safeDestroy(render.Billboard)
-            safeDestroy(render.Beam)
-            safeDestroy(render.TargetAttachment)
-            render.Highlight = nil
-            render.Billboard = nil
-            render.Beam = nil
-            render.TargetAttachment = nil
+            destroyRender(render)
+            ESP.Players[player] = nil
         end
     end
 
-    player.CharacterAdded:Connect(onCharacterAdded)
-    player.CharacterRemoving:Connect(onCharacterRemoving)
+    local charAddedConn
+    charAddedConn = player.CharacterAdded:Connect(function(char)
+        cleanup()
+        task.wait(0.1) -- 等待角色加载
+        setup()
+    end)
+    player.CharacterRemoving:Connect(cleanup)
 
     if player.Character then
-        onCharacterAdded(player.Character)
+        setup()
     end
+
+    -- 当玩家离开时清理
+    player.AncestryChanged:Connect(function(_, parent)
+        if not parent then
+            cleanup()
+        end
+    end)
 end
+
+-- 初始化所有现存玩家
+for _, player in ipairs(Players:GetPlayers()) do
+    onPlayerAdded(player)
+end
+
+Players.PlayerAdded:Connect(onPlayerAdded)
+Players.PlayerRemoving:Connect(function(player)
+    local render = ESP.Players[player]
+    if render then
+        destroyRender(render)
+        ESP.Players[player] = nil
+    end
+end)
+
+-- 本地玩家重生后更新射线起点
+LocalPlayer.CharacterAdded:Connect(function()
+    task.wait(0.1)
+    updateRayOrigin()
+end)
 
 -- 公开 API
 function ESP:AddPlayer(player)
-    if player == LocalPlayer or self.Active[player] then return end
-
-    local render = createRender(player, {
-        Highlight = true,
-        Text = true,
-        Beam = true
-    })
-    if render then
-        self.Active[player] = render
-        monitorCharacter(player)
-        self:UpdatePlayer(player)
-    end
+    onPlayerAdded(player)
 end
 
 function ESP:RemovePlayer(player)
-    local render = self.Active[player]
+    local render = ESP.Players[player]
     if render then
-        safeDestroy(render.Highlight)
-        safeDestroy(render.Billboard)
-        safeDestroy(render.Beam)
-        safeDestroy(render.TargetAttachment)
-        self.Active[player] = nil
+        destroyRender(render)
+        ESP.Players[player] = nil
     end
 end
 
-function ESP:UpdatePlayer(player)
-    local render = self.Active[player]
-    if render then
-        updateRender(render, player)
-    end
-end
-
--- 物体 API
 function ESP:AddObject(instance, options)
-    if not instance or self.Objects[instance] then return end
-
+    if not instance or ESP.Objects[instance] then return end
     local render = createRender(instance, {
-        Highlight = options.Highlight ~= false,
-        Text = options.Text ~= false,
-        Beam = options.Beam ~= false
+        Highlight = (options and options.Highlight ~= false),
+        Text = (options and options.Text ~= false),
+        Beam = (options and options.Beam ~= false)
     })
     if render then
-        self.Objects[instance] = {
-            Render = render,
-            ExtraData = options.ExtraData or {}
-        }
-        self:UpdateObject(instance)
+        ESP.Objects[instance] = {Render = render, ExtraData = options and options.ExtraData or {}}
     end
 end
 
 function ESP:RemoveObject(instance)
-    local data = self.Objects[instance]
+    local data = ESP.Objects[instance]
     if data then
-        safeDestroy(data.Render.Highlight)
-        safeDestroy(data.Render.Billboard)
-        safeDestroy(data.Render.Beam)
-        safeDestroy(data.Render.TargetAttachment)
-        self.Objects[instance] = nil
+        destroyRender(data.Render)
+        ESP.Objects[instance] = nil
     end
 end
 
-function ESP:UpdateObject(instance)
-    local data = self.Objects[instance]
-    if data then
-        updateRender(data.Render, instance, data.ExtraData)
-    end
-end
-
--- 全局更新所有物体 (强制刷新)
-function ESP:RefreshAll()
-    for instance, data in pairs(self.Objects) do
-        if data.ExtraData and data.ExtraData.Update then
-            data.ExtraData.Value = data.ExtraData.Update(instance)
-        end
-        self:UpdateObject(instance)
-    end
-end
-
--- 启用/禁用
 function ESP:Enable()
-    self._enabled = true
-    for _, player in pairs(Players:GetPlayers()) do
-        if player ~= LocalPlayer then
-            self:AddPlayer(player)
-        end
-    end
+    ESP._enabled = true
 end
 
 function ESP:Disable()
-    self._enabled = false
-    for player, render in pairs(self.Active) do
+    ESP._enabled = false
+    for _, render in pairs(ESP.Players) do
         if render.Highlight then render.Highlight.Enabled = false end
         if render.Billboard then render.Billboard.Enabled = false end
         if render.Beam then render.Beam.Enabled = false end
     end
-    for _, data in pairs(self.Objects) do
-        if data.Render.Highlight then data.Render.Highlight.Enabled = false end
-        if data.Render.Billboard then data.Render.Billboard.Enabled = false end
-        if data.Render.Beam then data.Render.Beam.Enabled = false end
+    for _, data in pairs(ESP.Objects) do
+        if data.Render then
+            if data.Render.Highlight then data.Render.Highlight.Enabled = false end
+            if data.Render.Billboard then data.Render.Billboard.Enabled = false end
+            if data.Render.Beam then data.Render.Beam.Enabled = false end
+        end
     end
 end
 
--- 设置方法
-function ESP:SetShowName(val) self.Settings.ShowName = val end
-function ESP:SetShowHealth(val) self.Settings.ShowHealth = val end
-function ESP:SetShowDistance(val) self.Settings.ShowDistance = val end
-function ESP:SetShowRay(val) self.Settings.ShowRay = val end
-function ESP:SetColor(color) self.Settings.Color = color end
-function ESP:SetTeamColor(val) self.Settings.UseTeamColor = val end
-function ESP:SetMaxDistance(dist) self.Settings.MaxDistance = dist end
-function ESP:SetUpdateInterval(sec) self.Settings.UpdateInterval = sec end
-function ESP:SetHealthGetter(fn) self.Settings.HealthGetter = fn end
+function ESP:SetShowName(val) ESP.Settings.ShowName = val end
+function ESP:SetShowHealth(val) ESP.Settings.ShowHealth = val end
+function ESP:SetShowDistance(val) ESP.Settings.ShowDistance = val end
+function ESP:SetShowRay(val) ESP.Settings.ShowRay = val end
+function ESP:SetRayColor(color) ESP.Settings.RayColor = color end
+function ESP:SetRayWidth(width) ESP.Settings.RayWidth = width end
+function ESP:SetRayTransparency(trans) ESP.Settings.RayTransparency = trans end
+function ESP:SetColor(color) ESP.Settings.DefaultColor = color end
+function ESP:SetTeamColor(val) ESP.Settings.UseTeamColor = val end
+function ESP:SetMaxDistance(dist) ESP.Settings.MaxDistance = dist end
+function ESP:SetUpdateInterval(sec) ESP.Settings.UpdateInterval = sec end
+function ESP:SetHealthGetter(fn) ESP.Settings.HealthGetter = fn end
 
 -- 兼容旧接口
 function ESP:ShowName(val) self:SetShowName(val) end
 function ESP:ShowHealth(val) self:SetShowHealth(val) end
 function ESP:ShowRay(val) self:SetShowRay(val) end
-function ESP:AddObjectWithCondition(instance, options, conditionFunc)
+function ESP:AddObjectWithCondition(instance, options, cond)
     self:AddObject(instance, options)
 end
+
 function ESP:UpdateObjectText(instance, text)
-    local data = self.Objects[instance]
-    if data and data.Render.NameLabel then
+    local data = ESP.Objects[instance]
+    if data and data.Render and data.Render.NameLabel then
         data.Render.NameLabel.Text = text
     end
 end
-
--- 初始化连接
-Players.PlayerAdded:Connect(function(player)
-    if ESP._enabled then
-        ESP:AddPlayer(player)
-    end
-end)
-
-Players.PlayerRemoving:Connect(function(player)
-    ESP:RemovePlayer(player)
-end)
-
-LocalPlayer.CharacterAdded:Connect(function()
-    updateLaserOrigin()
-end)
 
 return ESP
