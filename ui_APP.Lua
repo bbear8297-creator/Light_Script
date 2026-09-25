@@ -1,11 +1,7 @@
 --[[
     ═══════════════════════════════════════════════════════════════════════════
-    LS Team UI Library · v3.3
-    修复：
-      · 灵动岛用 Interactable 显式禁用非活动态交互（消除幽灵按钮）
-      · 所有 UserInputService 连接集中追踪，Destroy 时统一断开
-      · 色板拖动条 / SV / Hue 命中区监听器用完即断
-      · Slider / Keybind 全局监听纳入统一生命周期
+    LS Team UI Library · v3.4
+    灵动岛重构：头像 + 延迟 + 帧数 + 点击直接开主窗 + 支持自定义 widget
     ═══════════════════════════════════════════════════════════════════════════
 ]]
 
@@ -15,6 +11,8 @@ local CoreGui          = game:GetService("CoreGui")
 local Players          = game:GetService("Players")
 local TextService      = game:GetService("TextService")
 local Lighting         = game:GetService("Lighting")
+local RunService       = game:GetService("RunService")
+local Stats            = game:GetService("Stats")
 
 local Library = {}
 
@@ -167,31 +165,23 @@ Library.Themes = {
 }
 
 -- ═══════════════════════════════════════════════════════════════════════════
--- §6  灵动岛（纯黑苹果风 · 不可拖动 · 丝滑过渡 · 修复幽灵点击）
+-- §6  灵动岛（信息胶囊 · 单态）
 -- ═══════════════════════════════════════════════════════════════════════════
 local function CreateDynamicIsland(parent, theme, callbacks)
     callbacks = callbacks or {}
 
-    local COMPACT_H       = 38
-    local EXPANDED_H      = 96
-    local COMPACT_W_MIN   = 128
-    local EXPANDED_W_MIN  = 300
-    local COMPACT_RADIUS  = COMPACT_H / 2
-    local EXPANDED_RADIUS = 24
+    local H           = 40
+    local RADIUS      = H / 2
+    local PAD         = 10
+    local AVATAR_SIZE = 28
+    local MIN_WIDTH   = 180
 
-    local DUR_EXPAND   = 0.55
-    local DUR_COLLAPSE = 0.42
-    local EASE         = Enum.EasingStyle.Quart
-    local DIR          = Enum.EasingDirection.Out
-
-    local isExpanded = false
-    local isAnimating = false
-
+    -- ─── 主胶囊 ───
     local Island = Instance.new("TextButton")
     Island.Name = "DynamicIsland"
     Island.AnchorPoint = Vector2.new(0.5, 0)
     Island.Position = UDim2.new(0.5, 0, 0, 12)
-    Island.Size = UDim2.new(0, COMPACT_W_MIN, 0, COMPACT_H)
+    Island.Size = UDim2.new(0, MIN_WIDTH, 0, H)
     Island.Text = ""
     Island.AutoButtonColor = false
     Island.ClipsDescendants = true
@@ -202,7 +192,7 @@ local function CreateDynamicIsland(parent, theme, callbacks)
     Island.Parent = parent
 
     local islandCorner = Instance.new("UICorner")
-    islandCorner.CornerRadius = UDim.new(0, COMPACT_RADIUS)
+    islandCorner.CornerRadius = UDim.new(0, RADIUS)
     islandCorner.Parent = Island
 
     local islandStroke = Instance.new("UIStroke")
@@ -212,246 +202,187 @@ local function CreateDynamicIsland(parent, theme, callbacks)
     islandStroke.ApplyStrokeMode = Enum.ApplyStrokeMode.Border
     islandStroke.Parent = Island
 
-    -- ── 收起态（CanvasGroup + Interactable 双重控制） ──
-    local CompactGroup = Instance.new("CanvasGroup")
-    CompactGroup.Name = "CompactView"
-    CompactGroup.Size = UDim2.new(1, 0, 1, 0)
-    CompactGroup.BackgroundTransparency = 1
-    CompactGroup.GroupTransparency = 0
-    CompactGroup.Interactable = true
-    CompactGroup.ZIndex = 2
-    CompactGroup.Parent = Island
+    -- ─── 左区：头像 ───
+    local LeftZone = Instance.new("Frame")
+    LeftZone.Name = "LeftZone"
+    LeftZone.BackgroundTransparency = 1
+    LeftZone.Size = UDim2.new(0, AVATAR_SIZE, 1, 0)
+    LeftZone.Position = UDim2.new(0, PAD, 0, 0)
+    LeftZone.ZIndex = 3
+    LeftZone.Parent = Island
 
-    local compactDot = Instance.new("Frame")
-    compactDot.Size = UDim2.new(0, 8, 0, 8)
-    compactDot.Position = UDim2.new(0, 16, 0.5, -4)
-    compactDot.BackgroundColor3 = theme.Success
-    compactDot.BorderSizePixel = 0
-    compactDot.ZIndex = 3
-    compactDot.Parent = CompactGroup
+    local avatar = Instance.new("ImageLabel")
+    avatar.Name = "Avatar"
+    avatar.Size = UDim2.new(0, AVATAR_SIZE, 0, AVATAR_SIZE)
+    avatar.Position = UDim2.new(0, 0, 0.5, -AVATAR_SIZE / 2)
+    avatar.BackgroundColor3 = Color3.fromRGB(40, 40, 40)
+    avatar.Image = "rbxasset://textures/ui/GuiImagePlaceholder.png"
+    avatar.ZIndex = 4
+    avatar.Parent = LeftZone
     do
         local c = Instance.new("UICorner")
         c.CornerRadius = UDim.new(1, 0)
-        c.Parent = compactDot
+        c.Parent = avatar
+
+        local s = Instance.new("UIStroke")
+        s.Color = theme.Success
+        s.Thickness = 1.5
+        s.Transparency = 0.35
+        s.Parent = avatar
     end
+
+    -- 拉取头像
     task.spawn(function()
-        while compactDot.Parent do
-            TweenService:Create(compactDot,
-                TweenInfo.new(1.3, Enum.EasingStyle.Sine, Enum.EasingDirection.InOut),
-                { BackgroundTransparency = 0.55 }):Play()
-            task.wait(1.3)
-            TweenService:Create(compactDot,
-                TweenInfo.new(1.3, Enum.EasingStyle.Sine, Enum.EasingDirection.InOut),
-                { BackgroundTransparency = 0 }):Play()
-            task.wait(1.3)
-        end
+        pcall(function()
+            local userId = Players.LocalPlayer.UserId
+            local url = Players:GetUserThumbnailAsync(userId,
+                Enum.ThumbnailType.HeadShot, Enum.ThumbnailSize.Size100x100)
+            avatar.Image = url
+        end)
     end)
 
-    local compactTitle = Instance.new("TextLabel")
-    compactTitle.Size = UDim2.new(1, -50, 1, 0)
-    compactTitle.Position = UDim2.new(0, 34, 0, 0)
-    compactTitle.BackgroundTransparency = 1
-    compactTitle.Text = "LS UI"
-    compactTitle.TextColor3 = Color3.fromRGB(255, 255, 255)
-    compactTitle.Font = Enum.Font.GothamBold
-    compactTitle.TextSize = 13
-    compactTitle.TextXAlignment = Enum.TextXAlignment.Left
-    compactTitle.ZIndex = 3
-    compactTitle.Parent = CompactGroup
+    -- ─── 中区：状态文字 ───
+    local CenterZone = Instance.new("Frame")
+    CenterZone.Name = "CenterZone"
+    CenterZone.BackgroundTransparency = 1
+    CenterZone.Position = UDim2.new(0, PAD + AVATAR_SIZE + PAD, 0, 0)
+    CenterZone.Size = UDim2.new(0, 0, 1, 0)
+    CenterZone.ZIndex = 3
+    CenterZone.Parent = Island
 
-    -- ── 展开态 ──
-    local ExpandedGroup = Instance.new("CanvasGroup")
-    ExpandedGroup.Name = "ExpandedView"
-    ExpandedGroup.Size = UDim2.new(1, 0, 1, 0)
-    ExpandedGroup.BackgroundTransparency = 1
-    ExpandedGroup.GroupTransparency = 1
-    ExpandedGroup.Interactable = false   -- ★ 初始不可交互
-    ExpandedGroup.Visible = false        -- ★ 初始不可见
-    ExpandedGroup.ZIndex = 2
-    ExpandedGroup.Parent = Island
+    local centerLabel = Instance.new("TextLabel")
+    centerLabel.Name = "StatusText"
+    centerLabel.Size = UDim2.new(1, 0, 1, 0)
+    centerLabel.BackgroundTransparency = 1
+    centerLabel.Text = "运行中"
+    centerLabel.TextColor3 = Color3.fromRGB(255, 255, 255)
+    centerLabel.Font = Enum.Font.GothamSemibold
+    centerLabel.TextSize = 13
+    centerLabel.TextXAlignment = Enum.TextXAlignment.Left
+    centerLabel.ZIndex = 4
+    centerLabel.Parent = CenterZone
 
-    local expDot = Instance.new("Frame")
-    expDot.Size = UDim2.new(0, 10, 0, 10)
-    expDot.Position = UDim2.new(0, 20, 0, 20)
-    expDot.BackgroundColor3 = theme.Success
-    expDot.BorderSizePixel = 0
-    expDot.ZIndex = 3
-    expDot.Parent = ExpandedGroup
-    do
-        local c = Instance.new("UICorner")
-        c.CornerRadius = UDim.new(1, 0)
-        c.Parent = expDot
-    end
+    -- ─── 右区：延迟 + 帧数 ───
+    local RightZone = Instance.new("Frame")
+    RightZone.Name = "RightZone"
+    RightZone.BackgroundTransparency = 1
+    RightZone.AnchorPoint = Vector2.new(1, 0)
+    RightZone.Position = UDim2.new(1, -PAD, 0, 0)
+    RightZone.Size = UDim2.new(0, 0, 1, 0)
+    RightZone.ZIndex = 3
+    RightZone.Parent = Island
 
-    local expTitle = Instance.new("TextLabel")
-    expTitle.Size = UDim2.new(1, -50, 0, 22)
-    expTitle.Position = UDim2.new(0, 42, 0, 14)
-    expTitle.BackgroundTransparency = 1
-    expTitle.Text = "LS UI 调试器"
-    expTitle.TextColor3 = Color3.fromRGB(255, 255, 255)
-    expTitle.Font = Enum.Font.GothamBold
-    expTitle.TextSize = 15
-    expTitle.TextXAlignment = Enum.TextXAlignment.Left
-    expTitle.ZIndex = 3
-    expTitle.Parent = ExpandedGroup
+    local rightLayout = Instance.new("UIListLayout")
+    rightLayout.FillDirection = Enum.FillDirection.Horizontal
+    rightLayout.VerticalAlignment = Enum.VerticalAlignment.Center
+    rightLayout.Padding = UDim.new(0, 8)
+    rightLayout.SortOrder = Enum.SortOrder.LayoutOrder
+    rightLayout.Parent = RightZone
 
-    local expSub = Instance.new("TextLabel")
-    expSub.Size = UDim2.new(1, -50, 0, 18)
-    expSub.Position = UDim2.new(0, 42, 0, 40)
-    expSub.BackgroundTransparency = 1
-    expSub.Text = "运行中 · 0 个功能"
-    expSub.TextColor3 = Color3.fromRGB(142, 142, 147)
-    expSub.Font = Enum.Font.Gotham
-    expSub.TextSize = 12
-    expSub.TextXAlignment = Enum.TextXAlignment.Left
-    expSub.ZIndex = 3
-    expSub.Parent = ExpandedGroup
+    local pingLabel = Instance.new("TextLabel")
+    pingLabel.Name = "Ping"
+    pingLabel.AutomaticSize = Enum.AutomaticSize.X
+    pingLabel.Size = UDim2.new(0, 0, 1, 0)
+    pingLabel.BackgroundTransparency = 1
+    pingLabel.Text = "0ms"
+    pingLabel.TextColor3 = Color3.fromRGB(160, 160, 175)
+    pingLabel.Font = Enum.Font.GothamMedium
+    pingLabel.TextSize = 12
+    pingLabel.LayoutOrder = 1
+    pingLabel.ZIndex = 4
+    pingLabel.Parent = RightZone
 
-    local btnRow = Instance.new("Frame")
-    btnRow.Size = UDim2.new(1, -32, 0, 22)
-    btnRow.Position = UDim2.new(0, 16, 1, -28)
-    btnRow.BackgroundTransparency = 1
-    btnRow.ZIndex = 3
-    btnRow.Parent = ExpandedGroup
-    do
-        local l = Instance.new("UIListLayout")
-        l.FillDirection = Enum.FillDirection.Horizontal
-        l.Padding = UDim.new(0, 6)
-        l.VerticalAlignment = Enum.VerticalAlignment.Center
-        l.Parent = btnRow
-    end
+    local fpsLabel = Instance.new("TextLabel")
+    fpsLabel.Name = "Fps"
+    fpsLabel.AutomaticSize = Enum.AutomaticSize.X
+    fpsLabel.Size = UDim2.new(0, 0, 1, 0)
+    fpsLabel.BackgroundTransparency = 1
+    fpsLabel.Text = "0fps"
+    fpsLabel.TextColor3 = Color3.fromRGB(160, 160, 175)
+    fpsLabel.Font = Enum.Font.GothamMedium
+    fpsLabel.TextSize = 12
+    fpsLabel.LayoutOrder = 2
+    fpsLabel.ZIndex = 4
+    fpsLabel.Parent = RightZone
 
-    local buttonDefs = {}
-    local function addButton(label, key)
-        local btn = Instance.new("TextButton")
-        btn.Size = UDim2.new(0, 0, 0, 22)
-        btn.AutomaticSize = Enum.AutomaticSize.X
-        btn.BackgroundColor3 = Color3.fromRGB(255, 255, 255)
-        btn.BackgroundTransparency = 0.86
-        btn.Text = ""
-        btn.AutoButtonColor = false
-        btn.ZIndex = 4
-        btn.Parent = btnRow
-        do
-            local c = Instance.new("UICorner")
-            c.CornerRadius = UDim.new(1, 0)
-            c.Parent = btn
-            local p = Instance.new("UIPadding")
-            p.PaddingLeft = UDim.new(0, 12)
-            p.PaddingRight = UDim.new(0, 12)
-            p.Parent = btn
+    -- ─── 宽度自适应 ───
+    local function measureWidgets(container)
+        local total = 0
+        local count = 0
+        for _, child in ipairs(container:GetChildren()) do
+            if child:IsA("GuiObject") and not child:IsA("UIListLayout")
+            and not child:IsA("UIPadding") and not child:IsA("UICorner")
+            and not child:IsA("UIStroke") then
+                -- 优先读 AutomaticSize
+                if child.AutomaticSize == Enum.AutomaticSize.X
+                or child.AutomaticSize == Enum.AutomaticSize.XY then
+                    if child:IsA("TextLabel") or child:IsA("TextButton") then
+                        local w = MeasureText(child.Text, child.TextSize, child.Font).X
+                        total = total + w + 4
+                    end
+                else
+                    total = total + child.AbsoluteSize.X
+                end
+                count = count + 1
+            end
         end
-        local lbl = Instance.new("TextLabel")
-        lbl.Size = UDim2.new(1, 0, 1, 0)
-        lbl.BackgroundTransparency = 1
-        lbl.Text = label
-        lbl.TextColor3 = Color3.fromRGB(255, 255, 255)
-        lbl.Font = Enum.Font.GothamSemibold
-        lbl.TextSize = 11
-        lbl.ZIndex = 5
-        lbl.Parent = btn
-
-        btn.MouseEnter:Connect(function()
-            TweenService:Create(btn, TweenInfo.new(0.15), { BackgroundTransparency = 0.7 }):Play()
-        end)
-        btn.MouseLeave:Connect(function()
-            TweenService:Create(btn, TweenInfo.new(0.15), { BackgroundTransparency = 0.86 }):Play()
-        end)
-        btn.MouseButton1Click:Connect(function()
-            if callbacks.OnAction then SafeCall(callbacks.OnAction, key) end
-        end)
-        table.insert(buttonDefs, { Text = label, Instance = btn })
-        return btn
+        return total, count
     end
 
-    addButton("设置", "settings")
-    addButton("通知", "notify")
-    addButton("收起", "collapse")
+    local function updateWidth(animate)
+        local centerW = MeasureText(centerLabel.Text, 13, Enum.Font.GothamSemibold).X
+        local pingW   = MeasureText(pingLabel.Text, 12, Enum.Font.GothamMedium).X
+        local fpsW    = MeasureText(fpsLabel.Text, 12, Enum.Font.GothamMedium).X
+        local rightW  = pingW + 8 + fpsW
 
-    local function compactWidth()
-        local tw = MeasureText(compactTitle.Text, 13, Enum.Font.GothamBold).X
-        return math.max(COMPACT_W_MIN, 16 + 8 + 10 + tw + 20)
-    end
+        CenterZone.Size = UDim2.new(0, centerW, 1, 0)
+        RightZone.Size  = UDim2.new(0, rightW, 1, 0)
 
-    local function expandedWidth()
-        local wTitle = MeasureText(expTitle.Text, 15, Enum.Font.GothamBold).X + 42 + 24
-        local wSub   = MeasureText(expSub.Text, 12, Enum.Font.Gotham).X + 42 + 24
-        local wBtns  = 32
-        for _, b in ipairs(buttonDefs) do
-            wBtns = wBtns + MeasureText(b.Text, 11, Enum.Font.GothamSemibold).X + 24 + 6
-        end
-        return math.max(EXPANDED_W_MIN, wTitle, wSub, wBtns)
-    end
+        local totalW = PAD + AVATAR_SIZE + PAD + centerW + PAD + rightW + PAD
+        totalW = math.max(totalW, MIN_WIDTH)
 
-    -- ★ 核心修复：展开/收起时同步 Interactable + Visible ★
-    local function setExpanded(next)
-        if isAnimating or next == isExpanded then return end
-        isAnimating = true
-        isExpanded = next
-
-        local targetW = next and expandedWidth() or compactWidth()
-        local targetH = next and EXPANDED_H or COMPACT_H
-        local targetR = next and EXPANDED_RADIUS or COMPACT_RADIUS
-
-        if next then
-            -- 展开：先让展开态可见且可交互，收起态立即可见但不可交互
-            ExpandedGroup.Visible = true
-            ExpandedGroup.Interactable = true
-            CompactGroup.Interactable = false
-
-            local info = TweenInfo.new(DUR_EXPAND, EASE, DIR)
-            TweenService:Create(Island, info, {
-                Size = UDim2.new(0, targetW, 0, targetH),
-            }):Play()
-            TweenService:Create(islandCorner, info, {
-                CornerRadius = UDim.new(0, targetR),
-            }):Play()
-            TweenService:Create(CompactGroup,
-                TweenInfo.new(0.18, EASE, DIR),
-                { GroupTransparency = 1 }):Play()
-            TweenService:Create(ExpandedGroup,
-                TweenInfo.new(0.32, EASE, DIR, 0.16),
-                { GroupTransparency = 0 }):Play()
-
-            task.delay(DUR_EXPAND + 0.05, function()
-                -- 动画完成后，彻底隐藏收起态
-                if not isExpanded then return end
-                CompactGroup.Visible = false
-                isAnimating = false
-                if callbacks.OnExpand then SafeCall(callbacks.OnExpand) end
-            end)
+        if animate then
+            TweenService:Create(Island,
+                TweenInfo.new(0.35, Enum.EasingStyle.Quart, Enum.EasingDirection.Out),
+                { Size = UDim2.new(0, totalW, 0, H) }):Play()
         else
-            -- 收起：先让收起态可见但不可交互，展开态仍可见但立即禁交互
-            CompactGroup.Visible = true
-            CompactGroup.Interactable = false
-            ExpandedGroup.Interactable = false
-
-            TweenService:Create(ExpandedGroup,
-                TweenInfo.new(0.18, EASE, DIR),
-                { GroupTransparency = 1 }):Play()
-            local info = TweenInfo.new(DUR_COLLAPSE, EASE, DIR, 0.10)
-            TweenService:Create(Island, info, {
-                Size = UDim2.new(0, targetW, 0, targetH),
-            }):Play()
-            TweenService:Create(islandCorner, info, {
-                CornerRadius = UDim.new(0, targetR),
-            }):Play()
-            TweenService:Create(CompactGroup,
-                TweenInfo.new(0.28, EASE, DIR, 0.20),
-                { GroupTransparency = 0 }):Play()
-
-            task.delay(DUR_COLLAPSE + 0.15, function()
-                if isExpanded then return end
-                -- 动画完成后，隐藏展开态并恢复收起态交互
-                ExpandedGroup.Visible = false
-                CompactGroup.Interactable = true
-                isAnimating = false
-                if callbacks.OnCollapse then SafeCall(callbacks.OnCollapse) end
-            end)
+            Island.Size = UDim2.new(0, totalW, 0, H)
         end
     end
 
-    -- 点击 Island 主体切换（收起时点任意位置展开；展开时点空白收起）
+    -- ─── 实时刷新 ping / fps ───
+    task.spawn(function()
+        local frameCount = 0
+        local lastTime = tick()
+
+        local renderConn
+        renderConn = RunService.RenderStepped:Connect(function()
+            frameCount = frameCount + 1
+        end)
+
+        while Island.Parent do
+            task.wait(1)
+
+            local now = tick()
+            local elapsed = math.max(now - lastTime, 0.001)
+            local fps = math.floor(frameCount / elapsed)
+            frameCount = 0
+            lastTime = now
+            fpsLabel.Text = fps .. "fps"
+
+            local ping = 0
+            pcall(function()
+                ping = math.floor(Stats.Network.ServerStatsItem["Data Ping"]:GetValue())
+            end)
+            pingLabel.Text = ping .. "ms"
+
+            updateWidth(true)
+        end
+
+        if renderConn then renderConn:Disconnect() end
+    end)
+
+    -- ─── 点击 = 打开主窗（不再切换展开） ───
     local pressScale = Instance.new("UIScale")
     pressScale.Scale = 1
     pressScale.Parent = Island
@@ -459,43 +390,79 @@ local function CreateDynamicIsland(parent, theme, callbacks)
     Island.MouseButton1Click:Connect(function()
         TweenService:Create(pressScale,
             TweenInfo.new(0.08, Enum.EasingStyle.Quad, Enum.EasingDirection.Out),
-            { Scale = 0.94 }):Play()
+            { Scale = 0.96 }):Play()
         task.delay(0.08, function()
             TweenService:Create(pressScale,
-                TweenInfo.new(0.24, Enum.EasingStyle.Back, Enum.EasingDirection.Out),
+                TweenInfo.new(0.22, Enum.EasingStyle.Back, Enum.EasingDirection.Out),
                 { Scale = 1 }):Play()
         end)
-        setExpanded(not isExpanded)
+        if callbacks.OnClick then SafeCall(callbacks.OnClick) end
     end)
 
+    -- ─── API ───
     local API = { Frame = Island }
-    function API.SetExpanded(v) setExpanded(v) end
-    function API.Toggle() setExpanded(not isExpanded) end
 
     function API.SetStatus(text)
-        compactTitle.Text = text
-        expSub.Text = text
-        if not isExpanded then
-            TweenService:Create(Island,
-                TweenInfo.new(0.35, EASE, DIR),
-                { Size = UDim2.new(0, compactWidth(), 0, COMPACT_H) }):Play()
+        centerLabel.Text = text
+        updateWidth(true)
+    end
+    -- 兼容旧名
+    API.SetTitle = API.SetStatus
+
+    function API.SetAvatar(imageOrUserId)
+        if type(imageOrUserId) == "number" then
+            task.spawn(function()
+                pcall(function()
+                    local url = Players:GetUserThumbnailAsync(imageOrUserId,
+                        Enum.ThumbnailType.HeadShot, Enum.ThumbnailSize.Size100x100)
+                    avatar.Image = url
+                end)
+            end)
+        else
+            avatar.Image = tostring(imageOrUserId)
         end
     end
-    function API.SetTitle(text)
-        expTitle.Text = text
-        if isExpanded then
-            TweenService:Create(Island,
-                TweenInfo.new(0.35, EASE, DIR),
-                { Size = UDim2.new(0, expandedWidth(), 0, EXPANDED_H) }):Play()
+
+    function API.SetAccent(color)
+        local s = avatar:FindFirstChildOfClass("UIStroke")
+        if s then s.Color = color end
+    end
+    -- 兼容旧名
+    API.SetDotColor = API.SetAccent
+
+    -- ★ 自定义 widget ★
+    -- side: "left" | "center" | "right"
+    function API.AddWidget(side, guiObject)
+        if not guiObject then return end
+        if side == "left" then
+            guiObject.Parent = LeftZone
+        elseif side == "center" then
+            guiObject.Parent = CenterZone
+        elseif side == "right" then
+            guiObject.Parent = RightZone
         end
+        updateWidth(true)
+        return guiObject
     end
-    function API.SetDotColor(color)
-        compactDot.BackgroundColor3 = color
-        expDot.BackgroundColor3 = color
+
+    function API.RemoveWidget(guiObject)
+        if guiObject then guiObject:Destroy() end
+        updateWidth(true)
     end
+
+    function API.GetZones()
+        return {
+            Left   = LeftZone,
+            Center = CenterZone,
+            Right  = RightZone,
+        }
+    end
+
     function API.Destroy()
         if Island.Parent then Island:Destroy() end
     end
+
+    updateWidth(false)
     return API
 end
 
@@ -522,7 +489,7 @@ function Library:CreateWindow(options)
     ScreenGui.DisplayOrder = 999999
     ScreenGui.Parent = targetGui
 
-    -- ★ 全局连接追踪：所有 UserInputService 连接都进这里，Destroy 时统一断 ★
+    -- 全局连接追踪
     local globalConns = {}
     local function trackConn(conn)
         table.insert(globalConns, conn)
@@ -548,13 +515,13 @@ function Library:CreateWindow(options)
         for _, fn in pairs(themeRegistry) do pcall(fn, Theme) end
     end
 
-    -- 遮罩（引用计数）
+    -- 遮罩
     local Overlay = Instance.new("TextButton")
     Overlay.Size = UDim2.new(1, 0, 1, 0)
     Overlay.BackgroundTransparency = 1
     Overlay.Text = ""
     Overlay.Visible = false
-    Overlay.Active = false   -- ★ 默认完全禁用
+    Overlay.Active = false
     Overlay.ZIndex = 500
     Overlay.Parent = ScreenGui
 
@@ -602,6 +569,7 @@ function Library:CreateWindow(options)
 
     local function showMain()
         MainFrame.Visible = true
+        MainScale.Scale = 0
         TweenService:Create(MainScale,
             TweenInfo.new(0.45, Enum.EasingStyle.Back, Enum.EasingDirection.Out),
             { Scale = 1 }):Play()
@@ -617,18 +585,10 @@ function Library:CreateWindow(options)
         end)
     end
 
+    -- 灵动岛：点击 = 打开主窗
     Island = CreateDynamicIsland(ScreenGui, Theme, {
-        OnExpand = function() end,
-        OnCollapse = function() end,
-        OnAction = function(key)
-            if key == "settings" then
-                showMain()
-                Island.SetExpanded(false)
-            elseif key == "notify" then
-                if options.OnIslandNotify then SafeCall(options.OnIslandNotify) end
-            elseif key == "collapse" then
-                Island.SetExpanded(false)
-            end
+        OnClick = function()
+            showMain()
         end,
     })
 
@@ -716,7 +676,7 @@ function Library:CreateWindow(options)
         closeBtn.TextColor3 = t.SubText
     end)
 
-    -- 主窗拖动（用 trackConn 追踪）
+    -- 主窗拖动
     do
         local dragging, dragStart, startPos
         TopBar.InputBegan:Connect(function(input)
@@ -797,9 +757,7 @@ function Library:CreateWindow(options)
     ContentContainer.ZIndex = 2
     ContentContainer.Parent = MainFrame
 
-    -- ═══════════════════════════════════════════════════════════════════
     -- 通知
-    -- ═══════════════════════════════════════════════════════════════════
     local function pushNotification(title, message, duration, opts)
         title = title or "通知"
         message = message or ""
@@ -962,15 +920,16 @@ function Library:CreateWindow(options)
         return pushNotification(title, message, duration or 4, { Type = "error" })
     end
 
-    function Window:SetIslandStatus(text) Island.SetStatus(text) end
-    function Window:SetIslandTitle(text) Island.SetTitle(text) end
-    function Window:SetIslandDot(color) Island.SetDotColor(color) end
     function Window:ShowMain() showMain() end
     function Window:HideMain() hideMain() end
 
-    options.OnIslandNotify = function()
-        Window:Toast("来自灵动岛", 2.5)
-    end
+    -- ★ 暴露灵动岛，让外部能插 widget ★
+    function Window:GetIsland() return Island end
+    -- 保留旧 API 兼容
+    function Window:SetIslandStatus(text) Island.SetStatus(text) end
+    function Window:SetIslandTitle(text)  Island.SetStatus(text) end
+    function Window:SetIslandDot(color)   Island.SetAccent(color) end
+    function Window:SetIslandAvatar(imgOrId) Island.SetAvatar(imgOrId) end
 
     -- ═══════════════════════════════════════════════════════════════════
     -- CreateTab
@@ -1406,7 +1365,6 @@ function Library:CreateWindow(options)
                     update(input)
                 end
             end)
-            -- ★ 全局监听改用 trackConn，Destroy 时统一断 ★
             trackConn(UserInputService.InputEnded:Connect(function(input)
                 if input.UserInputType == Enum.UserInputType.MouseButton1
                 or input.UserInputType == Enum.UserInputType.Touch then
@@ -1756,7 +1714,7 @@ function Library:CreateWindow(options)
             return img
         end
 
-        -- ▸ 色板（所有监听器纳入 popupConns，关闭时全部断开）
+        -- 色板
         function Elements:CreateColorPicker(text, defaultColor, callback)
             local currentColor = defaultColor or Color3.fromRGB(255, 255, 255)
             local frame = Instance.new("Frame")
@@ -1801,7 +1759,7 @@ function Library:CreateWindow(options)
             local popup = nil
             local popupOverlayId = nil
             local popupOverlayConn = nil
-            local popupConns = {}   -- ★ popup 专属连接池 ★
+            local popupConns = {}
 
             local function trackPopupConn(conn)
                 table.insert(popupConns, conn)
@@ -1838,7 +1796,6 @@ function Library:CreateWindow(options)
                 local py = math.clamp(ap.Y + asz.Y + 8, 10, ScreenGui.AbsoluteSize.Y - 258)
                 popup.Position = UDim2.new(0, px, 0, py)
 
-                -- 拖动把手
                 local bar = Instance.new("TextButton")
                 bar.Size = UDim2.new(1, 0, 0, 22)
                 bar.BackgroundTransparency = 1
@@ -1871,7 +1828,6 @@ function Library:CreateWindow(options)
                     end))
                 end
 
-                -- SV 区
                 local svBox = Instance.new("Frame")
                 svBox.Size = UDim2.new(0, 190, 0, 190)
                 svBox.Position = UDim2.new(0, 12, 0, 30)
@@ -1922,7 +1878,6 @@ function Library:CreateWindow(options)
                     gr.Parent = black
                 end
 
-                -- 色相条
                 local hue = Instance.new("Frame")
                 hue.Size = UDim2.new(0, 24, 0, 190)
                 hue.Position = UDim2.new(0, 210, 0, 30)
@@ -1948,7 +1903,6 @@ function Library:CreateWindow(options)
                     gr.Parent = hue
                 end
 
-                -- 指示器
                 local svInd = Instance.new("Frame")
                 svInd.Size = UDim2.new(0, 14, 0, 14)
                 svInd.AnchorPoint = Vector2.new(0.5, 0.5)
@@ -2038,7 +1992,6 @@ function Library:CreateWindow(options)
                     end
                 end)
 
-                -- ★ 这两个全局连接在 popup 关闭时会被断开 ★
                 trackPopupConn(UserInputService.InputEnded:Connect(function(input)
                     if input.UserInputType == Enum.UserInputType.MouseButton1
                     or input.UserInputType == Enum.UserInputType.Touch then
@@ -2055,7 +2008,6 @@ function Library:CreateWindow(options)
                     end
                 end))
 
-                -- 完成按钮
                 local closeB = Instance.new("TextButton")
                 closeB.Size = UDim2.new(1, -24, 0, 26)
                 closeB.Position = UDim2.new(0, 12, 1, -32)
@@ -2074,17 +2026,15 @@ function Library:CreateWindow(options)
                 end
                 closeB.MouseButton1Click:Connect(closePopup)
 
-                -- 遮罩点击关闭
                 popupOverlayId = pushOverlay()
                 popupOverlayConn = Overlay.MouseButton1Click:Connect(closePopup)
             end)
 
-            -- 窗口销毁时若色板还开着，也一并清掉
             trackConn({ Disconnect = function() closePopup() end, Connected = true })
             return frame
         end
 
-        -- ▸ Keybind（每次点击"..."重新监听，旧 conn 必断）
+        -- Keybind
         function Elements:CreateKeybind(text, defaultKey, callback)
             local currentKey = defaultKey or Enum.KeyCode.E
             local frame = Instance.new("Frame")
@@ -2146,7 +2096,6 @@ function Library:CreateWindow(options)
                 bbG.Edge.Color = Theme.Accent
                 bbG.Edge.Transparency = 0.3
 
-                -- ★ 先断旧监听，避免累积 ★
                 if listenConn then listenConn:Disconnect(); listenConn = nil end
 
                 listenConn = trackConn(UserInputService.InputBegan:Connect(function(input, processed)
@@ -2197,27 +2146,21 @@ function Library:CreateWindow(options)
     -- Destroy
     -- ═══════════════════════════════════════════════════════════════════
     function Window:Destroy()
-        -- 1) 关闭所有下拉
         closeDropdown()
-        -- 2) 断开所有全局连接（含 slider、colorpicker、keybind 残留）
         disconnectAll()
-        -- 3) 清空所有 overlay
         clearAllOverlays()
-        -- 4) 清主题回调
         themeRegistry = {}
         activeKeybinds = {}
-        -- 5) 释放模糊
         BlurController.Release()
-        -- 6) 销毁灵动岛
         if Island then Island.Destroy() end
-        -- 7) 销毁整个 ScreenGui
         if ScreenGui then ScreenGui:Destroy() end
     end
 
-    task.spawn(function()
-        task.wait(0.3)
-        showMain()
-    end)
+    -- 初始不自动打开主窗（点击灵动岛才打开）
+    -- task.spawn(function()
+    --     task.wait(0.3)
+    --     showMain()
+    -- end)
 
     return Window
 end
