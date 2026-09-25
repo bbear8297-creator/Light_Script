@@ -1,9 +1,9 @@
 --[[
     ═══════════════════════════════════════════════════════════════════════════
-    LS Team UI Library · v4.0 "Deep Space"
-    · 深空夜配色 + 高质感层次
-    · FeatureCounter：功能数实时统计，灵动岛同步
-    · 精细动效：按压、悬停、开关小圆点、发光
+    LS Team UI Library · v4.1 "True Deep Space"
+    · 完全不透明深空夜，无脏感
+    · 灵动岛宽度修复
+    · Tab 选中填充式
     ═══════════════════════════════════════════════════════════════════════════
 ]]
 
@@ -33,8 +33,8 @@ end
 -- ═══════════════════════════════════════════════════════════════════════════
 -- §2  工具
 -- ═══════════════════════════════════════════════════════════════════════════
-local function MeasureText(text, size, font, maxW)
-    return TextService:GetTextSize(text, size, font, Vector2.new(maxW or 2000, 2000))
+local function MeasureText(text, size, font)
+    return TextService:GetTextSize(text, size, font, Vector2.new(2000, 2000))
 end
 
 local function SafeCall(fn, ...)
@@ -44,7 +44,7 @@ local function SafeCall(fn, ...)
 end
 
 -- ═══════════════════════════════════════════════════════════════════════════
--- §3  背景模糊
+-- §3  背景模糊（弱化版）
 -- ═══════════════════════════════════════════════════════════════════════════
 local BlurController = {}
 do
@@ -60,7 +60,8 @@ do
             state.blur = b
         end
         state.count = state.count + 1
-        TweenService:Create(state.blur, TweenInfo.new(0.4), { Size = 18 }):Play()
+        -- 弱化：从 18 → 8
+        TweenService:Create(state.blur, TweenInfo.new(0.4), { Size = 8 }):Play()
     end
 
     function BlurController.Release()
@@ -77,40 +78,33 @@ do
 end
 
 -- ═══════════════════════════════════════════════════════════════════════════
--- §4  深空夜玻璃系统
---     层次：Window(最深) → Panel(中) → Element(最浅) → Bubble(按钮)
+-- §4  深空夜玻璃（不透明版）
 -- ═══════════════════════════════════════════════════════════════════════════
 local Glass = {}
 Glass.Levels = {
-    Window  = { Tint = Color3.fromRGB( 18,  18,  22), TintT = 0.04, EdgeT = 0.80, Radius = 26, Stroke = 1.0 },
-    Panel   = { Tint = Color3.fromRGB( 26,  26,  32), TintT = 0.14, EdgeT = 0.86, Radius = 20, Stroke = 1.0 },
-    Element = { Tint = Color3.fromRGB( 34,  34,  42), TintT = 0.22, EdgeT = 0.90, Radius = 14, Stroke = 1.0 },
-    Bubble  = { Tint = Color3.fromRGB( 46,  46,  56), TintT = 0.30, EdgeT = 0.88, Radius = 12, Stroke = 1.0 },
-    Hover   = { Tint = Color3.fromRGB( 58,  58,  70), TintT = 0.20, EdgeT = 0.80, Radius = 14, Stroke = 1.0 },
+    --          底色 (完全深色)         不透明   描边透明   圆角
+    Window  = { Tint = Color3.fromRGB( 13,  13,  17), TintT = 0, EdgeT = 0.94, Radius = 26, Stroke = 1.0 },
+    Panel   = { Tint = Color3.fromRGB( 20,  20,  26), TintT = 0, EdgeT = 0.96, Radius = 20, Stroke = 1.0 },
+    Element = { Tint = Color3.fromRGB( 28,  28,  36), TintT = 0, EdgeT = 0.96, Radius = 14, Stroke = 1.0 },
+    Bubble  = { Tint = Color3.fromRGB( 38,  38,  48), TintT = 0, EdgeT = 0.94, Radius = 12, Stroke = 1.0 },
 }
 
 function Glass.Apply(parent, opts)
     opts = opts or {}
     local lv = Glass.Levels[opts.Level or "Element"]
-    local tint     = opts.Tint     or lv.Tint
-    local tintT    = opts.TintT    or lv.TintT
-    local edgeT    = opts.EdgeT    or lv.EdgeT
-    local radius   = opts.Radius   or lv.Radius
-    local strokePx = opts.Stroke   or lv.Stroke
-    local edgeCol  = opts.EdgeColor or Color3.fromRGB(255, 255, 255)
 
-    parent.BackgroundColor3 = tint
-    parent.BackgroundTransparency = tintT
+    parent.BackgroundColor3 = opts.Tint or lv.Tint
+    parent.BackgroundTransparency = opts.TintT or lv.TintT
     parent.BorderSizePixel = 0
 
     local corner = Instance.new("UICorner")
-    corner.CornerRadius = UDim.new(0, radius)
+    corner.CornerRadius = UDim.new(0, opts.Radius or lv.Radius)
     corner.Parent = parent
 
     local edge = Instance.new("UIStroke")
-    edge.Color = edgeCol
-    edge.Transparency = edgeT
-    edge.Thickness = strokePx
+    edge.Color = opts.EdgeColor or Color3.fromRGB(255, 255, 255)
+    edge.Transparency = opts.EdgeT or lv.EdgeT
+    edge.Thickness = opts.Stroke or lv.Stroke
     edge.ApplyStrokeMode = Enum.ApplyStrokeMode.Border
     edge.Parent = parent
 
@@ -118,60 +112,52 @@ function Glass.Apply(parent, opts)
 end
 
 -- ═══════════════════════════════════════════════════════════════════════════
--- §5  主题（深空夜为默认）
+-- §5  主题（深空夜配色）
 -- ═══════════════════════════════════════════════════════════════════════════
 Library.Themes = {
-    -- 深空夜（默认）
     DeepSpace = {
         Accent     = Color3.fromRGB( 10, 132, 255),
-        AccentHi   = Color3.fromRGB( 90, 180, 255),
-        AccentDim  = Color3.fromRGB( 20,  80, 160),
-        Text       = Color3.fromRGB(245, 245, 250),
+        AccentHi   = Color3.fromRGB(120, 190, 255),
+        Text       = Color3.fromRGB(240, 240, 245),
         SubText    = Color3.fromRGB(140, 140, 155),
-        HintText   = Color3.fromRGB( 90,  90, 105),
-        ToggleOff  = Color3.fromRGB( 60,  60,  72),
+        HintText   = Color3.fromRGB( 85,  85, 100),
+        ToggleOff  = Color3.fromRGB( 55,  55,  68),
         Divider    = Color3.fromRGB(255, 255, 255),
         Success    = Color3.fromRGB( 48, 209,  88),
         Warning    = Color3.fromRGB(255, 214,  10),
         Danger     = Color3.fromRGB(255,  69,  58),
     },
-    -- 深空紫
     Nebula = {
         Accent     = Color3.fromRGB(160, 108, 255),
-        AccentHi   = Color3.fromRGB(200, 165, 255),
-        AccentDim  = Color3.fromRGB( 80,  50, 140),
+        AccentHi   = Color3.fromRGB(210, 175, 255),
         Text       = Color3.fromRGB(245, 240, 255),
         SubText    = Color3.fromRGB(155, 145, 175),
-        HintText   = Color3.fromRGB(100,  90, 120),
-        ToggleOff  = Color3.fromRGB( 65,  60,  80),
+        HintText   = Color3.fromRGB( 95,  85, 115),
+        ToggleOff  = Color3.fromRGB( 60,  55,  75),
         Divider    = Color3.fromRGB(255, 255, 255),
         Success    = Color3.fromRGB( 80, 220, 160),
         Warning    = Color3.fromRGB(255, 200,  80),
         Danger     = Color3.fromRGB(255, 100, 110),
     },
-    -- 深空青
     Aurora = {
         Accent     = Color3.fromRGB( 48, 220, 200),
-        AccentHi   = Color3.fromRGB(120, 240, 225),
-        AccentDim  = Color3.fromRGB( 20, 100,  95),
+        AccentHi   = Color3.fromRGB(130, 245, 230),
         Text       = Color3.fromRGB(235, 250, 250),
         SubText    = Color3.fromRGB(140, 180, 180),
-        HintText   = Color3.fromRGB( 80, 120, 120),
-        ToggleOff  = Color3.fromRGB( 55,  75,  75),
+        HintText   = Color3.fromRGB( 75, 115, 115),
+        ToggleOff  = Color3.fromRGB( 50,  70,  70),
         Divider    = Color3.fromRGB(255, 255, 255),
         Success    = Color3.fromRGB( 80, 230, 160),
         Warning    = Color3.fromRGB(255, 200,  80),
         Danger     = Color3.fromRGB(255, 110, 100),
     },
-    -- 深空橙
     Ember = {
         Accent     = Color3.fromRGB(255, 140,  60),
-        AccentHi   = Color3.fromRGB(255, 180, 110),
-        AccentDim  = Color3.fromRGB(140,  70,  20),
+        AccentHi   = Color3.fromRGB(255, 190, 130),
         Text       = Color3.fromRGB(255, 245, 235),
         SubText    = Color3.fromRGB(200, 170, 145),
-        HintText   = Color3.fromRGB(130, 100,  80),
-        ToggleOff  = Color3.fromRGB( 80,  65,  55),
+        HintText   = Color3.fromRGB(125,  95,  75),
+        ToggleOff  = Color3.fromRGB( 75,  60,  50),
         Divider    = Color3.fromRGB(255, 255, 255),
         Success    = Color3.fromRGB(150, 220, 120),
         Warning    = Color3.fromRGB(255, 210, 100),
@@ -180,11 +166,11 @@ Library.Themes = {
 }
 
 -- ═══════════════════════════════════════════════════════════════════════════
--- §6  FeatureCounter（功能计数器）
+-- §6  FeatureCounter
 -- ═══════════════════════════════════════════════════════════════════════════
 local FeatureCounter = {}
 do
-    local features = {}    -- { [id] = { name, active } }
+    local features = {}
     local listeners = {}
     local counter = 0
 
@@ -202,13 +188,6 @@ do
         FeatureCounter.Notify()
     end
 
-    function FeatureCounter.Remove(id)
-        if features[id] then
-            features[id] = nil
-            FeatureCounter.Notify()
-        end
-    end
-
     function FeatureCounter.Count()
         local n = 0
         for _, f in pairs(features) do
@@ -217,39 +196,26 @@ do
         return n
     end
 
-    function FeatureCounter.List()
-        local list = {}
-        for id, f in pairs(features) do
-            if f.active then table.insert(list, { id = id, name = f.name }) end
-        end
-        return list
-    end
-
     function FeatureCounter.Notify()
         local count = FeatureCounter.Count()
-        local list = FeatureCounter.List()
         for _, fn in ipairs(listeners) do
-            pcall(fn, count, list)
+            pcall(fn, count)
         end
     end
 
-    -- 订阅返回 unsubscribe 函数
     function FeatureCounter.Subscribe(fn)
         table.insert(listeners, fn)
-        pcall(fn, FeatureCounter.Count(), FeatureCounter.List())
+        pcall(fn, FeatureCounter.Count())
         return function()
             for i, f in ipairs(listeners) do
-                if f == fn then
-                    table.remove(listeners, i)
-                    return
-                end
+                if f == fn then table.remove(listeners, i); return end
             end
         end
     end
 end
 
 -- ═══════════════════════════════════════════════════════════════════════════
--- §7  灵动岛（信息胶囊）
+-- §7  灵动岛（宽度修复版）
 -- ═══════════════════════════════════════════════════════════════════════════
 local function CreateDynamicIsland(parent, theme, callbacks)
     callbacks = callbacks or {}
@@ -258,19 +224,17 @@ local function CreateDynamicIsland(parent, theme, callbacks)
     local RADIUS      = H / 2
     local PAD         = 10
     local AVATAR_SIZE = 28
-    local MIN_WIDTH   = 180
 
     local Island = Instance.new("TextButton")
     Island.Name = "DynamicIsland"
     Island.AnchorPoint = Vector2.new(0.5, 0)
     Island.Position = UDim2.new(0.5, 0, 0, 12)
-    Island.Size = UDim2.new(0, MIN_WIDTH, 0, H)
+    Island.Size = UDim2.new(0, 200, 0, H)
     Island.Text = ""
     Island.AutoButtonColor = false
     Island.ClipsDescendants = true
     Island.ZIndex = 220
     Island.BackgroundColor3 = Color3.fromRGB(0, 0, 0)
-    Island.BackgroundTransparency = 0
     Island.BorderSizePixel = 0
     Island.Parent = parent
 
@@ -280,28 +244,20 @@ local function CreateDynamicIsland(parent, theme, callbacks)
 
     local islandStroke = Instance.new("UIStroke")
     islandStroke.Color = Color3.fromRGB(255, 255, 255)
-    islandStroke.Transparency = 0.88
+    islandStroke.Transparency = 0.9
     islandStroke.Thickness = 1
     islandStroke.ApplyStrokeMode = Enum.ApplyStrokeMode.Border
     islandStroke.Parent = Island
 
-    -- 左区：头像
-    local LeftZone = Instance.new("Frame")
-    LeftZone.Name = "LeftZone"
-    LeftZone.BackgroundTransparency = 1
-    LeftZone.Size = UDim2.new(0, AVATAR_SIZE, 1, 0)
-    LeftZone.Position = UDim2.new(0, PAD, 0, 0)
-    LeftZone.ZIndex = 3
-    LeftZone.Parent = Island
-
+    -- 左：头像
     local avatar = Instance.new("ImageLabel")
     avatar.Name = "Avatar"
     avatar.Size = UDim2.new(0, AVATAR_SIZE, 0, AVATAR_SIZE)
-    avatar.Position = UDim2.new(0, 0, 0.5, -AVATAR_SIZE / 2)
-    avatar.BackgroundColor3 = Color3.fromRGB(40, 40, 40)
+    avatar.Position = UDim2.new(0, PAD, 0.5, -AVATAR_SIZE / 2)
+    avatar.BackgroundColor3 = Color3.fromRGB(40, 40, 45)
     avatar.Image = "rbxasset://textures/ui/GuiImagePlaceholder.png"
     avatar.ZIndex = 4
-    avatar.Parent = LeftZone
+    avatar.Parent = Island
     do
         local c = Instance.new("UICorner")
         c.CornerRadius = UDim.new(1, 0)
@@ -309,7 +265,7 @@ local function CreateDynamicIsland(parent, theme, callbacks)
         local s = Instance.new("UIStroke")
         s.Color = theme.Success
         s.Thickness = 1.5
-        s.Transparency = 0.35
+        s.Transparency = 0.3
         s.Parent = avatar
     end
 
@@ -322,18 +278,11 @@ local function CreateDynamicIsland(parent, theme, callbacks)
         end)
     end)
 
-    -- 中区：状态
-    local CenterZone = Instance.new("Frame")
-    CenterZone.Name = "CenterZone"
-    CenterZone.BackgroundTransparency = 1
-    CenterZone.Position = UDim2.new(0, PAD + AVATAR_SIZE + PAD, 0, 0)
-    CenterZone.Size = UDim2.new(0, 0, 1, 0)
-    CenterZone.ZIndex = 3
-    CenterZone.Parent = Island
-
+    -- 中：状态文字（短句）
     local centerLabel = Instance.new("TextLabel")
     centerLabel.Name = "StatusText"
-    centerLabel.Size = UDim2.new(1, 0, 1, 0)
+    centerLabel.Position = UDim2.new(0, PAD + AVATAR_SIZE + 10, 0, 0)
+    centerLabel.Size = UDim2.new(0, 100, 1, 0)
     centerLabel.BackgroundTransparency = 1
     centerLabel.Text = "待机"
     centerLabel.TextColor3 = Color3.fromRGB(255, 255, 255)
@@ -341,26 +290,26 @@ local function CreateDynamicIsland(parent, theme, callbacks)
     centerLabel.TextSize = 13
     centerLabel.TextXAlignment = Enum.TextXAlignment.Left
     centerLabel.ZIndex = 4
-    centerLabel.Parent = CenterZone
+    centerLabel.Parent = Island
 
-    -- 右区：延迟 + 帧数 + 自定义 widget
-    local RightZone = Instance.new("Frame")
-    RightZone.Name = "RightZone"
-    RightZone.BackgroundTransparency = 1
-    RightZone.AnchorPoint = Vector2.new(1, 0)
-    RightZone.Position = UDim2.new(1, -PAD, 0, 0)
-    RightZone.Size = UDim2.new(0, 0, 1, 0)
-    RightZone.ZIndex = 3
-    RightZone.Parent = Island
+    -- 右侧容器（右对齐）
+    local rightHolder = Instance.new("Frame")
+    rightHolder.Name = "RightHolder"
+    rightHolder.AnchorPoint = Vector2.new(1, 0)
+    rightHolder.Position = UDim2.new(1, -PAD, 0, 0)
+    rightHolder.Size = UDim2.new(0, 120, 1, 0)
+    rightHolder.BackgroundTransparency = 1
+    rightHolder.ZIndex = 3
+    rightHolder.Parent = Island
 
     local rightLayout = Instance.new("UIListLayout")
     rightLayout.FillDirection = Enum.FillDirection.Horizontal
+    rightLayout.HorizontalAlignment = Enum.HorizontalAlignment.Right
     rightLayout.VerticalAlignment = Enum.VerticalAlignment.Center
-    rightLayout.Padding = UDim.new(0, 8)
+    rightLayout.Padding = UDim.new(0, 6)
     rightLayout.SortOrder = Enum.SortOrder.LayoutOrder
-    rightLayout.Parent = RightZone
+    rightLayout.Parent = rightHolder
 
-    -- 状态点（在 ping 左侧）
     local statusDot = Instance.new("Frame")
     statusDot.Name = "StatusDot"
     statusDot.Size = UDim2.new(0, 7, 0, 7)
@@ -368,7 +317,7 @@ local function CreateDynamicIsland(parent, theme, callbacks)
     statusDot.BorderSizePixel = 0
     statusDot.LayoutOrder = 0
     statusDot.ZIndex = 4
-    statusDot.Parent = RightZone
+    statusDot.Parent = rightHolder
     do
         local c = Instance.new("UICorner")
         c.CornerRadius = UDim.new(1, 0)
@@ -377,8 +326,7 @@ local function CreateDynamicIsland(parent, theme, callbacks)
 
     local pingLabel = Instance.new("TextLabel")
     pingLabel.Name = "Ping"
-    pingLabel.AutomaticSize = Enum.AutomaticSize.X
-    pingLabel.Size = UDim2.new(0, 0, 1, 0)
+    pingLabel.Size = UDim2.new(0, 42, 1, 0)
     pingLabel.BackgroundTransparency = 1
     pingLabel.Text = "0ms"
     pingLabel.TextColor3 = Color3.fromRGB(160, 160, 175)
@@ -386,12 +334,11 @@ local function CreateDynamicIsland(parent, theme, callbacks)
     pingLabel.TextSize = 12
     pingLabel.LayoutOrder = 1
     pingLabel.ZIndex = 4
-    pingLabel.Parent = RightZone
+    pingLabel.Parent = rightHolder
 
     local fpsLabel = Instance.new("TextLabel")
     fpsLabel.Name = "Fps"
-    fpsLabel.AutomaticSize = Enum.AutomaticSize.X
-    fpsLabel.Size = UDim2.new(0, 0, 1, 0)
+    fpsLabel.Size = UDim2.new(0, 44, 1, 0)
     fpsLabel.BackgroundTransparency = 1
     fpsLabel.Text = "0fps"
     fpsLabel.TextColor3 = Color3.fromRGB(160, 160, 175)
@@ -399,33 +346,34 @@ local function CreateDynamicIsland(parent, theme, callbacks)
     fpsLabel.TextSize = 12
     fpsLabel.LayoutOrder = 2
     fpsLabel.ZIndex = 4
-    fpsLabel.Parent = RightZone
+    fpsLabel.Parent = rightHolder
 
-    -- 宽度自适应
+    -- ★ 宽度计算：中文加 30% buffer ★
     local function updateWidth(animate)
-        local centerW = MeasureText(centerLabel.Text, 13, Enum.Font.GothamSemibold).X
-        local pingW   = MeasureText(pingLabel.Text, 12, Enum.Font.GothamMedium).X
-        local fpsW    = MeasureText(fpsLabel.Text, 12, Enum.Font.GothamMedium).X
-        local rightW  = 7 + 8 + pingW + 8 + fpsW  -- dot + padding + ping + padding + fps
+        local rawCenterW = MeasureText(centerLabel.Text, 13, Enum.Font.GothamSemibold).X
+        local centerW = rawCenterW * 1.15 + 8   -- 加 15% buffer + 8px 保险
 
-        -- 遍历额外 widget
-        for _, child in ipairs(RightZone:GetChildren()) do
+        local rawPingW = MeasureText(pingLabel.Text, 12, Enum.Font.GothamMedium).X
+        local rawFpsW  = MeasureText(fpsLabel.Text, 12, Enum.Font.GothamMedium).X
+        local pingW = rawPingW + 6
+        local fpsW  = rawFpsW + 6
+
+        -- 右侧总宽：statusDot(7) + 6 + ping + 6 + fps
+        local extraWidgetsW = 0
+        for _, child in ipairs(rightHolder:GetChildren()) do
             if child:IsA("GuiObject") and not child:IsA("UIListLayout")
             and child ~= statusDot and child ~= pingLabel and child ~= fpsLabel
             and child.Visible then
-                if child.AutomaticSize == Enum.AutomaticSize.X and (child:IsA("TextLabel") or child:IsA("TextButton")) then
-                    rightW = rightW + MeasureText(child.Text, child.TextSize, child.Font).X + 8
-                else
-                    rightW = rightW + child.AbsoluteSize.X + 8
-                end
+                extraWidgetsW = extraWidgetsW + child.Size.X.Offset + 6
             end
         end
 
-        CenterZone.Size = UDim2.new(0, centerW, 1, 0)
-        RightZone.Size  = UDim2.new(0, rightW, 1, 0)
+        local rightW = 7 + 6 + pingW + 6 + fpsW + extraWidgetsW
 
-        local totalW = PAD + AVATAR_SIZE + PAD + centerW + PAD + rightW + PAD
-        totalW = math.max(totalW, MIN_WIDTH)
+        centerLabel.Size = UDim2.new(0, centerW, 1, 0)
+        rightHolder.Size = UDim2.new(0, rightW, 1, 0)
+
+        local totalW = PAD + AVATAR_SIZE + 10 + centerW + 12 + rightW + PAD
 
         if animate then
             TweenService:Create(Island,
@@ -436,12 +384,12 @@ local function CreateDynamicIsland(parent, theme, callbacks)
         end
     end
 
-    -- 实时刷新 ping / fps
+    -- ping/fps 刷新
     task.spawn(function()
         local frameCount = 0
         local lastTime = tick()
 
-        local renderConn = RunService.RenderStepped:Connect(function()
+        local conn = RunService.RenderStepped:Connect(function()
             frameCount = frameCount + 1
         end)
 
@@ -463,7 +411,7 @@ local function CreateDynamicIsland(parent, theme, callbacks)
             updateWidth(true)
         end
 
-        if renderConn then renderConn:Disconnect() end
+        if conn then conn:Disconnect() end
     end)
 
     -- 点击 = 打开主窗
@@ -483,7 +431,6 @@ local function CreateDynamicIsland(parent, theme, callbacks)
         if callbacks.OnClick then SafeCall(callbacks.OnClick) end
     end)
 
-    -- ─── API ───
     local API = { Frame = Island }
 
     function API.SetStatus(text)
@@ -512,32 +459,21 @@ local function CreateDynamicIsland(parent, theme, callbacks)
     end
     API.SetDotColor = API.SetAccent
 
-    -- 状态点颜色
     function API.SetStatusDot(color)
         statusDot.BackgroundColor3 = color
     end
 
-    -- 自定义 widget
-    function API.AddWidget(side, guiObject)
-        if not guiObject then return end
-        if side == "left" then
-            guiObject.Parent = LeftZone
-        elseif side == "center" then
-            guiObject.Parent = CenterZone
-        elseif side == "right" then
-            guiObject.Parent = RightZone
+    function API.AddWidget(side, obj)
+        if not obj then return end
+        if side == "right" then
+            obj.Parent = rightHolder
         end
         updateWidth(true)
-        return guiObject
-    end
-
-    function API.RemoveWidget(guiObject)
-        if guiObject then guiObject:Destroy() end
-        updateWidth(true)
+        return obj
     end
 
     function API.GetZones()
-        return { Left = LeftZone, Center = CenterZone, Right = RightZone }
+        return { Right = rightHolder }
     end
 
     function API.Destroy()
@@ -669,13 +605,13 @@ function Library:CreateWindow(options)
         OnClick = function() showMain() end,
     })
 
-    -- ★ 订阅 FeatureCounter，实时更新灵动岛 ★
-    local islandUnsub = FeatureCounter.Subscribe(function(count, list)
+    -- FeatureCounter 订阅
+    local islandUnsub = FeatureCounter.Subscribe(function(count)
         if count == 0 then
             Island.SetStatus("待机")
             Island.SetStatusDot(Theme.HintText)
         else
-            Island.SetStatus("运行中 · " .. count .. " 个功能")
+            Island.SetStatus("运行中 · " .. count)
             Island.SetStatusDot(Theme.Success)
         end
     end)
@@ -690,7 +626,7 @@ function Library:CreateWindow(options)
     MainFrame.Visible = false
     MainFrame.ZIndex = 100
     MainFrame.Parent = ScreenGui
-    Glass.Apply(MainFrame, { Level = "Window", Radius = 26 })
+    local mainGlass = Glass.Apply(MainFrame, { Level = "Window", Radius = 26 })
 
     MainScale = Instance.new("UIScale")
     MainScale.Scale = 0
@@ -709,16 +645,9 @@ function Library:CreateWindow(options)
     TopBar.ZIndex = 2
     TopBar.Parent = MainFrame
 
-    -- 左侧：圆形 Logo 占位 + 标题
-    local TitleHolder = Instance.new("Frame")
-    TitleHolder.Size = UDim2.new(1, -140, 1, 0)
-    TitleHolder.Position = UDim2.new(0, 20, 0, 0)
-    TitleHolder.BackgroundTransparency = 1
-    TitleHolder.ZIndex = 3
-    TitleHolder.Parent = TopBar
-
     local TopTitle = Instance.new("TextLabel")
-    TopTitle.Size = UDim2.new(1, 0, 1, 0)
+    TopTitle.Size = UDim2.new(1, -120, 1, 0)
+    TopTitle.Position = UDim2.new(0, 24, 0, 0)
     TopTitle.BackgroundTransparency = 1
     TopTitle.Text = WindowTitle
     TopTitle.TextColor3 = Theme.Text
@@ -726,7 +655,7 @@ function Library:CreateWindow(options)
     TopTitle.TextSize = 16
     TopTitle.TextXAlignment = Enum.TextXAlignment.Left
     TopTitle.ZIndex = 3
-    TopTitle.Parent = TitleHolder
+    TopTitle.Parent = TopBar
 
     local closeBtn = Instance.new("TextButton")
     closeBtn.Size = UDim2.new(0, 30, 0, 30)
@@ -739,42 +668,30 @@ function Library:CreateWindow(options)
     closeBtn.AutoButtonColor = false
     closeBtn.ZIndex = 3
     closeBtn.Parent = TopBar
-    local closeGlass = Glass.Apply(closeBtn, { Level = "Bubble", Radius = 15, EdgeT = 0.92 })
-    closeBtn.BackgroundTransparency = 0.5
+    local closeGlass = Glass.Apply(closeBtn, { Level = "Bubble", Radius = 15 })
 
     closeBtn.MouseEnter:Connect(function()
         TweenService:Create(closeBtn, TweenInfo.new(0.18), {
-            BackgroundColor3 = Theme.Danger, BackgroundTransparency = 0.15,
-            TextColor3 = Color3.fromRGB(255, 255, 255)
-        }):Play()
-        TweenService:Create(closeGlass.Edge, TweenInfo.new(0.18), {
-            Color = Theme.Danger, Transparency = 0.4
+            BackgroundColor3 = Theme.Danger, TextColor3 = Color3.fromRGB(255, 255, 255)
         }):Play()
     end)
     closeBtn.MouseLeave:Connect(function()
         TweenService:Create(closeBtn, TweenInfo.new(0.18), {
-            BackgroundColor3 = Color3.fromRGB(46, 46, 56), BackgroundTransparency = 0.5,
-            TextColor3 = Theme.SubText
-        }):Play()
-        TweenService:Create(closeGlass.Edge, TweenInfo.new(0.18), {
-            Color = Color3.fromRGB(255, 255, 255), Transparency = 0.92
+            BackgroundColor3 = Color3.fromRGB(38, 38, 48), TextColor3 = Theme.SubText
         }):Play()
     end)
     closeBtn.MouseButton1Click:Connect(hideMain)
 
-    -- 顶部分隔线（更细腻）
     local topDivider = Instance.new("Frame")
     topDivider.Size = UDim2.new(1, -32, 0, 1)
     topDivider.Position = UDim2.new(0, 16, 1, 0)
-    topDivider.BackgroundColor3 = Theme.Divider
-    topDivider.BackgroundTransparency = 0.92
+    topDivider.BackgroundColor3 = Color3.fromRGB(40, 40, 50)
     topDivider.BorderSizePixel = 0
     topDivider.ZIndex = 3
     topDivider.Parent = TopBar
 
     RegisterTheme(function(t)
         TopTitle.TextColor3 = t.Text
-        topDivider.BackgroundColor3 = t.Divider
         closeBtn.TextColor3 = t.SubText
     end)
 
@@ -859,9 +776,7 @@ function Library:CreateWindow(options)
     ContentContainer.ZIndex = 2
     ContentContainer.Parent = MainFrame
 
-    -- ═══════════════════════════════════════════════════════════════════
     -- 通知
-    -- ═══════════════════════════════════════════════════════════════════
     local function pushNotification(title, message, duration, opts)
         title = title or "通知"
         message = message or ""
@@ -896,29 +811,9 @@ function Library:CreateWindow(options)
             c.Parent = bar
         end
 
-        local imgSize = 40
-        local padX = 18
-        local hasImage = opts.Image and true or false
-        local textX = hasImage and (padX + imgSize + 12) or (padX + 10)
-
-        if hasImage then
-            local img = Instance.new("ImageLabel")
-            img.Size = UDim2.new(0, imgSize, 0, imgSize)
-            img.Position = UDim2.new(0, padX, 0, 14)
-            img.BackgroundColor3 = Color3.fromRGB(60, 60, 70)
-            img.BackgroundTransparency = 0.3
-            img.Image = opts.Image
-            img.ScaleType = Enum.ScaleType.Crop
-            img.ZIndex = 3
-            img.Parent = notif
-            local c = Instance.new("UICorner")
-            c.CornerRadius = UDim.new(0, 10)
-            c.Parent = img
-        end
-
         local titleLbl = Instance.new("TextLabel")
-        titleLbl.Size = UDim2.new(1, -textX - 16, 0, 20)
-        titleLbl.Position = UDim2.new(0, textX, 0, 12)
+        titleLbl.Size = UDim2.new(1, -28, 0, 20)
+        titleLbl.Position = UDim2.new(0, 20, 0, 12)
         titleLbl.BackgroundTransparency = 1
         titleLbl.Text = title
         titleLbl.TextColor3 = Theme.Text
@@ -929,8 +824,8 @@ function Library:CreateWindow(options)
         titleLbl.Parent = notif
 
         local msgLbl = Instance.new("TextLabel")
-        msgLbl.Size = UDim2.new(1, -textX - 16, 0, 0)
-        msgLbl.Position = UDim2.new(0, textX, 0, 36)
+        msgLbl.Size = UDim2.new(1, -28, 0, 0)
+        msgLbl.Position = UDim2.new(0, 20, 0, 36)
         msgLbl.BackgroundTransparency = 1
         msgLbl.Text = message
         msgLbl.TextColor3 = Theme.SubText
@@ -941,11 +836,10 @@ function Library:CreateWindow(options)
         msgLbl.ZIndex = 3
         msgLbl.Parent = notif
 
-        local maxW = 280 - textX - 16
-        local textH = MeasureText(message, 12, Enum.Font.Gotham, maxW).Y
-        local minH = hasImage and (imgSize + 26) or 66
-        local totalH = math.max(minH, 36 + textH + 18)
-        msgLbl.Size = UDim2.new(1, -textX - 16, 0, textH)
+        local maxW = 280 - 28
+        local textH = TextService:GetTextSize(message, 12, Enum.Font.Gotham, Vector2.new(maxW, 2000)).Y
+        local totalH = math.max(66, 36 + textH + 18)
+        msgLbl.Size = UDim2.new(1, -28, 0, textH)
         notif.Size = UDim2.new(1, 0, 0, totalH)
 
         local sc = Instance.new("UIScale")
@@ -998,8 +892,7 @@ function Library:CreateWindow(options)
     function Window:SetAccentColor(color)
         local h, s, v = color:ToHSV()
         Theme.Accent = color
-        Theme.AccentHi = Color3.fromHSV(h, math.max(s - 0.15, 0), math.min(v + 0.15, 1))
-        Theme.AccentDim = Color3.fromHSV(h, s, math.max(v * 0.5, 0.1))
+        Theme.AccentHi = Color3.fromHSV(h, math.max(s - 0.15, 0), math.min(v + 0.2, 1))
         RunTheme()
     end
 
@@ -1034,10 +927,8 @@ function Library:CreateWindow(options)
     function Window:SetIslandDot(color)   Island.SetStatusDot(color) end
     function Window:SetIslandAvatar(imgOrId) Island.SetAvatar(imgOrId) end
 
-    -- ★ 手动注册功能（用于非 Toggle 的功能）★
     function Window:RegisterFeature(name)
-        local id = FeatureCounter.Register(name)
-        return id
+        return FeatureCounter.Register(name)
     end
     function Window:SetFeatureActive(id, active)
         FeatureCounter.SetActive(id, active)
@@ -1053,13 +944,14 @@ function Library:CreateWindow(options)
         local TabButton = Instance.new("TextButton")
         TabButton.Name = TabName
         TabButton.Size = UDim2.new(1, -16, 0, 38)
+        TabButton.BackgroundColor3 = Color3.fromRGB(28, 28, 36)
         TabButton.BackgroundTransparency = 1
         TabButton.Text = ""
         TabButton.AutoButtonColor = false
         TabButton.ZIndex = 4
         TabButton.Parent = TabContainer
         local tbGlass = Glass.Apply(TabButton, {
-            Level = "Bubble", Radius = 12, EdgeT = 0.97, TintT = 1,
+            Level = "Bubble", Radius = 12, EdgeT = 1, TintT = 1,
         })
 
         local tbScale = Instance.new("UIScale")
@@ -1067,8 +959,8 @@ function Library:CreateWindow(options)
         tbScale.Parent = TabButton
 
         local holder = Instance.new("Frame")
-        holder.Size = UDim2.new(1, -20, 1, 0)
-        holder.Position = UDim2.new(0, 12, 0, 0)
+        holder.Size = UDim2.new(1, -24, 1, 0)
+        holder.Position = UDim2.new(0, 14, 0, 0)
         holder.BackgroundTransparency = 1
         holder.ZIndex = 5
         holder.Parent = TabButton
@@ -1091,10 +983,6 @@ function Library:CreateWindow(options)
             icon.Size = defaultSize
             icon.Image = iconId
             icon.BackgroundTransparency = 1
-            if iconOptions and iconOptions.BackgroundColor3 then
-                icon.BackgroundColor3 = iconOptions.BackgroundColor3
-                icon.BackgroundTransparency = iconOptions.BackgroundTransparency or 0
-            end
             if iconOptions and iconOptions.ImageColor3 then
                 icon.ImageColor3 = iconOptions.ImageColor3
             end
@@ -1116,17 +1004,16 @@ function Library:CreateWindow(options)
         local isSelected = false
         local function apply(t)
             if isSelected then
-                tabText.TextColor3 = t.Text
-                tbGlass.Edge.Color = t.Accent
-                tbGlass.Edge.Transparency = 0.5
-                tbGlass.Tint = t.Accent
-                tbGlass.TintT = 0.78
+                -- 选中：填充 accent，不要描边
+                tabText.TextColor3 = t.AccentHi
+                tbGlass.Edge.Transparency = 1
+                TabButton.BackgroundColor3 = t.Accent
+                TabButton.BackgroundTransparency = 0.82
             else
                 tabText.TextColor3 = t.SubText
-                tbGlass.Edge.Color = Color3.fromRGB(255, 255, 255)
-                tbGlass.Edge.Transparency = 0.97
-                tbGlass.Tint = Color3.fromRGB(46, 46, 56)
-                tbGlass.TintT = 1
+                tbGlass.Edge.Transparency = 1
+                TabButton.BackgroundColor3 = Color3.fromRGB(28, 28, 36)
+                TabButton.BackgroundTransparency = 1
             end
         end
         RegisterTheme(apply)
@@ -1169,13 +1056,18 @@ function Library:CreateWindow(options)
 
         TabButton.MouseEnter:Connect(function()
             if not isSelected then
-                tbGlass.TintT = 0.88
+                TweenService:Create(TabButton, TweenInfo.new(0.18), {
+                    BackgroundColor3 = Color3.fromRGB(40, 40, 50),
+                    BackgroundTransparency = 0.3
+                }):Play()
             end
             TweenService:Create(tbScale, TweenInfo.new(0.18), { Scale = 1.02 }):Play()
         end)
         TabButton.MouseLeave:Connect(function()
             if not isSelected then
-                tbGlass.TintT = 1
+                TweenService:Create(TabButton, TweenInfo.new(0.18), {
+                    BackgroundTransparency = 1
+                }):Play()
             end
             TweenService:Create(tbScale, TweenInfo.new(0.18), { Scale = 1 }):Play()
         end)
@@ -1197,7 +1089,7 @@ function Library:CreateWindow(options)
             frame.Size = UDim2.new(1, 0, 0, 34)
             frame.ZIndex = 3
             frame.Parent = TabPage
-            local g = Glass.Apply(frame, { Level = "Element", Radius = 12, EdgeT = 0.94 })
+            Glass.Apply(frame, { Level = "Element", Radius = 12 })
 
             local lbl = Instance.new("TextLabel")
             lbl.Size = UDim2.new(1, -32, 1, 0)
@@ -1210,10 +1102,7 @@ function Library:CreateWindow(options)
             lbl.TextXAlignment = Enum.TextXAlignment.Left
             lbl.ZIndex = 4
             lbl.Parent = frame
-            RegisterTheme(function(t)
-                lbl.TextColor3 = t.SubText
-                frame.BackgroundColor3 = Color3.fromRGB(34, 34, 42)
-            end)
+            RegisterTheme(function(t) lbl.TextColor3 = t.SubText end)
             return frame
         end
 
@@ -1266,12 +1155,10 @@ function Library:CreateWindow(options)
             local line = Instance.new("Frame")
             line.Size = UDim2.new(1, -32, 0, 1)
             line.Position = UDim2.new(0, 16, 0.5, 0)
-            line.BackgroundColor3 = Theme.Divider
-            line.BackgroundTransparency = 0.92
+            line.BackgroundColor3 = Color3.fromRGB(40, 40, 50)
             line.BorderSizePixel = 0
             line.ZIndex = 4
             line.Parent = frame
-            RegisterTheme(function(t) line.BackgroundColor3 = t.Divider end)
             return frame
         end
 
@@ -1282,7 +1169,7 @@ function Library:CreateWindow(options)
             btn.AutoButtonColor = false
             btn.ZIndex = 3
             btn.Parent = TabPage
-            local g = Glass.Apply(btn, { Level = "Element", Radius = 12, EdgeT = 0.92 })
+            local g = Glass.Apply(btn, { Level = "Element", Radius = 12 })
 
             local lbl = Instance.new("TextLabel")
             lbl.Size = UDim2.new(1, -56, 1, 0)
@@ -1310,15 +1197,12 @@ function Library:CreateWindow(options)
             RegisterTheme(function(t)
                 lbl.TextColor3 = t.Text
                 arrow.TextColor3 = t.HintText
-                btn.BackgroundColor3 = Color3.fromRGB(34, 34, 42)
+                btn.BackgroundColor3 = Color3.fromRGB(28, 28, 36)
             end)
 
             btn.MouseEnter:Connect(function()
                 TweenService:Create(btn, TweenInfo.new(0.18), {
-                    BackgroundColor3 = Color3.fromRGB(50, 50, 62), BackgroundTransparency = 0.05
-                }):Play()
-                TweenService:Create(g.Edge, TweenInfo.new(0.18), {
-                    Color = Theme.Accent, Transparency = 0.5
+                    BackgroundColor3 = Color3.fromRGB(42, 42, 54)
                 }):Play()
                 TweenService:Create(lbl, TweenInfo.new(0.18), {
                     TextColor3 = Theme.AccentHi
@@ -1329,10 +1213,7 @@ function Library:CreateWindow(options)
             end)
             btn.MouseLeave:Connect(function()
                 TweenService:Create(btn, TweenInfo.new(0.18), {
-                    BackgroundColor3 = Color3.fromRGB(34, 34, 42), BackgroundTransparency = 0.22
-                }):Play()
-                TweenService:Create(g.Edge, TweenInfo.new(0.18), {
-                    Color = Color3.fromRGB(255, 255, 255), Transparency = 0.92
+                    BackgroundColor3 = Color3.fromRGB(28, 28, 36)
                 }):Play()
                 TweenService:Create(lbl, TweenInfo.new(0.18), {
                     TextColor3 = Theme.Text
@@ -1345,7 +1226,6 @@ function Library:CreateWindow(options)
             return btn
         end
 
-        -- ★ Toggle 自动注册到 FeatureCounter ★
         function Elements:CreateToggle(text, default, callback, opts)
             opts = opts or {}
             local toggled = default or false
@@ -1353,9 +1233,8 @@ function Library:CreateWindow(options)
             frame.Size = UDim2.new(1, 0, 0, 44)
             frame.ZIndex = 3
             frame.Parent = TabPage
-            local g = Glass.Apply(frame, { Level = "Element", Radius = 12, EdgeT = 0.94 })
+            Glass.Apply(frame, { Level = "Element", Radius = 12 })
 
-            -- 左侧状态点
             local dot = Instance.new("Frame")
             dot.Size = UDim2.new(0, 6, 0, 6)
             dot.Position = UDim2.new(0, 16, 0.5, -3)
@@ -1409,15 +1288,13 @@ function Library:CreateWindow(options)
                 c.Parent = knob
                 local s = Instance.new("UIStroke")
                 s.Color = Color3.fromRGB(0, 0, 0)
-                s.Transparency = 0.8
+                s.Transparency = 0.85
                 s.Thickness = 1
                 s.Parent = knob
             end
 
-            -- ★ FeatureCounter 注册 ★
-            local featureName = opts.FeatureName or text
-            local registerFeature = opts.RegisterFeature ~= false
-            local featureId = registerFeature and FeatureCounter.Register(featureName) or nil
+            local featureId = opts.RegisterFeature ~= false
+                and FeatureCounter.Register(opts.FeatureName or text) or nil
             if featureId and toggled then
                 FeatureCounter.SetActive(featureId, true)
             end
@@ -1444,22 +1321,19 @@ function Library:CreateWindow(options)
                     BackgroundColor3 = dotColor
                 }):Play()
 
-                -- ★ 更新 FeatureCounter ★
                 if featureId then
                     FeatureCounter.SetActive(featureId, toggled)
                 end
-
                 SafeCall(callback, toggled)
             end
             track.MouseButton1Click:Connect(fire)
 
-            local API = { Frame = frame }
-            function API.Set(v)
-                if toggled ~= v then fire() end
-            end
-            function API.Get() return toggled end
-            function API.GetFeatureId() return featureId end
-            return API
+            return {
+                Frame = frame,
+                Set = function(v) if toggled ~= v then fire() end end,
+                Get = function() return toggled end,
+                GetFeatureId = function() return featureId end,
+            }
         end
 
         function Elements:CreateSlider(text, min, max, default, callback)
@@ -1467,10 +1341,10 @@ function Library:CreateWindow(options)
             frame.Size = UDim2.new(1, 0, 0, 64)
             frame.ZIndex = 3
             frame.Parent = TabPage
-            Glass.Apply(frame, { Level = "Element", Radius = 12, EdgeT = 0.94 })
+            Glass.Apply(frame, { Level = "Element", Radius = 12 })
 
             local lbl = Instance.new("TextLabel")
-            lbl.Size = UDim2.new(1, -32, 0, 22)
+            lbl.Size = UDim2.new(1, -100, 0, 22)
             lbl.Position = UDim2.new(0, 18, 0, 8)
             lbl.BackgroundTransparency = 1
             lbl.Text = text
@@ -1497,8 +1371,7 @@ function Library:CreateWindow(options)
             local barBg = Instance.new("Frame")
             barBg.Size = UDim2.new(1, -36, 0, 6)
             barBg.Position = UDim2.new(0, 18, 0, 42)
-            barBg.BackgroundColor3 = Color3.fromRGB(60, 60, 72)
-            barBg.BackgroundTransparency = 0.5
+            barBg.BackgroundColor3 = Color3.fromRGB(50, 50, 62)
             barBg.BorderSizePixel = 0
             barBg.ZIndex = 4
             barBg.Parent = frame
@@ -1594,7 +1467,7 @@ function Library:CreateWindow(options)
             frame.Size = UDim2.new(1, 0, 0, 44)
             frame.ZIndex = 3
             frame.Parent = TabPage
-            Glass.Apply(frame, { Level = "Element", Radius = 12, EdgeT = 0.94 })
+            Glass.Apply(frame, { Level = "Element", Radius = 12 })
 
             local lbl = Instance.new("TextLabel")
             lbl.Size = UDim2.new(0.5, -20, 1, 0)
@@ -1619,22 +1492,11 @@ function Library:CreateWindow(options)
             dropBtn.AutoButtonColor = false
             dropBtn.ZIndex = 4
             dropBtn.Parent = frame
-            local dbg = Glass.Apply(dropBtn, { Level = "Bubble", Radius = 8, EdgeT = 0.88 })
+            Glass.Apply(dropBtn, { Level = "Bubble", Radius = 8 })
 
             RegisterTheme(function(t)
                 lbl.TextColor3 = t.Text
                 dropBtn.TextColor3 = t.Text
-            end)
-
-            dropBtn.MouseEnter:Connect(function()
-                TweenService:Create(dbg.Edge, TweenInfo.new(0.18), {
-                    Color = Theme.Accent, Transparency = 0.5
-                }):Play()
-            end)
-            dropBtn.MouseLeave:Connect(function()
-                TweenService:Create(dbg.Edge, TweenInfo.new(0.18), {
-                    Color = Color3.fromRGB(255, 255, 255), Transparency = 0.88
-                }):Play()
             end)
 
             dropBtn.MouseButton1Click:Connect(function()
@@ -1719,7 +1581,7 @@ function Library:CreateWindow(options)
             frame.Size = UDim2.new(1, 0, 0, 64)
             frame.ZIndex = 3
             frame.Parent = TabPage
-            Glass.Apply(frame, { Level = "Element", Radius = 12, EdgeT = 0.94 })
+            Glass.Apply(frame, { Level = "Element", Radius = 12 })
 
             local lbl = Instance.new("TextLabel")
             lbl.Size = UDim2.new(1, -32, 0, 20)
@@ -1736,8 +1598,7 @@ function Library:CreateWindow(options)
             local input = Instance.new("TextBox")
             input.Size = UDim2.new(1, -36, 0, 26)
             input.Position = UDim2.new(0, 18, 0, 30)
-            input.BackgroundColor3 = Color3.fromRGB(12, 12, 16)
-            input.BackgroundTransparency = 0.3
+            input.BackgroundColor3 = Color3.fromRGB(18, 18, 24)
             input.BorderSizePixel = 0
             input.Text = default or ""
             input.PlaceholderText = placeholder or ""
@@ -1758,8 +1619,8 @@ function Library:CreateWindow(options)
                 p.PaddingRight = UDim.new(0, 10)
                 p.Parent = input
                 local s = Instance.new("UIStroke")
-                s.Color = Color3.fromRGB(80, 80, 95)
-                s.Transparency = 0.7
+                s.Color = Color3.fromRGB(60, 60, 75)
+                s.Transparency = 0.4
                 s.Thickness = 1
                 s.Parent = input
             end
@@ -1774,7 +1635,7 @@ function Library:CreateWindow(options)
                 local s = input:FindFirstChildOfClass("UIStroke")
                 if s then
                     TweenService:Create(s, TweenInfo.new(0.18), {
-                        Color = Theme.Accent, Transparency = 0.3
+                        Color = Theme.Accent, Transparency = 0.2
                     }):Play()
                 end
             end)
@@ -1782,7 +1643,7 @@ function Library:CreateWindow(options)
                 local s = input:FindFirstChildOfClass("UIStroke")
                 if s then
                     TweenService:Create(s, TweenInfo.new(0.18), {
-                        Color = Color3.fromRGB(80, 80, 95), Transparency = 0.7
+                        Color = Color3.fromRGB(60, 60, 75), Transparency = 0.4
                     }):Play()
                 end
                 SafeCall(callback, input.Text, enterPressed)
@@ -1796,7 +1657,7 @@ function Library:CreateWindow(options)
             frame.Size = UDim2.new(1, 0, 0, 48)
             frame.ZIndex = 3
             frame.Parent = TabPage
-            Glass.Apply(frame, { Level = "Element", Radius = 12, EdgeT = 0.94 })
+            Glass.Apply(frame, { Level = "Element", Radius = 12 })
 
             local lbl = Instance.new("TextLabel")
             lbl.Size = UDim2.new(1, -90, 0, 20)
@@ -1826,8 +1687,7 @@ function Library:CreateWindow(options)
             local barBg = Instance.new("Frame")
             barBg.Size = UDim2.new(1, -36, 0, 6)
             barBg.Position = UDim2.new(0, 18, 0, 34)
-            barBg.BackgroundColor3 = Color3.fromRGB(60, 60, 72)
-            barBg.BackgroundTransparency = 0.5
+            barBg.BackgroundColor3 = Color3.fromRGB(50, 50, 62)
             barBg.BorderSizePixel = 0
             barBg.ZIndex = 4
             barBg.Parent = frame
@@ -1855,15 +1715,15 @@ function Library:CreateWindow(options)
                 barFill.BackgroundColor3 = t.Accent
             end)
 
-            local API = {}
-            function API.Set(v)
-                v = math.clamp(v, 0, 1)
-                TweenService:Create(barFill,
-                    TweenInfo.new(0.3, Enum.EasingStyle.Quart, Enum.EasingDirection.Out),
-                    { Size = UDim2.new(v, 0, 1, 0) }):Play()
-                pct.Text = math.floor(v * 100) .. "%"
-            end
-            return API
+            return {
+                Set = function(v)
+                    v = math.clamp(v, 0, 1)
+                    TweenService:Create(barFill,
+                        TweenInfo.new(0.3, Enum.EasingStyle.Quart, Enum.EasingDirection.Out),
+                        { Size = UDim2.new(v, 0, 1, 0) }):Play()
+                    pct.Text = math.floor(v * 100) .. "%"
+                end,
+            }
         end
 
         function Elements:CreateInfoPanel(info)
@@ -1894,7 +1754,7 @@ function Library:CreateWindow(options)
             local avatar = Instance.new("ImageLabel")
             avatar.Size = UDim2.new(1, -4, 1, -4)
             avatar.Position = UDim2.new(0, 2, 0, 2)
-            avatar.BackgroundColor3 = Color3.fromRGB(60, 60, 70)
+            avatar.BackgroundColor3 = Color3.fromRGB(50, 50, 60)
             avatar.Image = "rbxasset://textures/ui/GuiImagePlaceholder.png"
             avatar.ZIndex = 5
             avatar.Parent = avWrap
@@ -1970,7 +1830,7 @@ function Library:CreateWindow(options)
             frame.Size = UDim2.new(1, 0, 0, 46)
             frame.ZIndex = 3
             frame.Parent = TabPage
-            Glass.Apply(frame, { Level = "Element", Radius = 12, EdgeT = 0.94 })
+            Glass.Apply(frame, { Level = "Element", Radius = 12 })
 
             local lbl = Instance.new("TextLabel")
             lbl.Size = UDim2.new(0.5, -20, 1, 0)
@@ -1999,7 +1859,7 @@ function Library:CreateWindow(options)
                 c.Parent = prev
                 local s = Instance.new("UIStroke")
                 s.Color = Color3.fromRGB(255, 255, 255)
-                s.Transparency = 0.75
+                s.Transparency = 0.8
                 s.Parent = prev
             end
 
@@ -2287,7 +2147,7 @@ function Library:CreateWindow(options)
             frame.Size = UDim2.new(1, 0, 0, 44)
             frame.ZIndex = 3
             frame.Parent = TabPage
-            Glass.Apply(frame, { Level = "Element", Radius = 12, EdgeT = 0.94 })
+            Glass.Apply(frame, { Level = "Element", Radius = 12 })
 
             local lbl = Instance.new("TextLabel")
             lbl.Size = UDim2.new(0.6, -20, 1, 0)
@@ -2312,7 +2172,7 @@ function Library:CreateWindow(options)
             bindBtn.AutoButtonColor = false
             bindBtn.ZIndex = 4
             bindBtn.Parent = frame
-            local bbG = Glass.Apply(bindBtn, { Level = "Bubble", Radius = 8, EdgeT = 0.88 })
+            local bbG = Glass.Apply(bindBtn, { Level = "Bubble", Radius = 8 })
 
             RegisterTheme(function(t)
                 lbl.TextColor3 = t.Text
@@ -2338,10 +2198,6 @@ function Library:CreateWindow(options)
                 if listening then return end
                 listening = true
                 bindBtn.Text = "..."
-                TweenService:Create(bbG.Edge, TweenInfo.new(0.18), {
-                    Color = Theme.Accent, Transparency = 0.3
-                }):Play()
-
                 if listenConn then listenConn:Disconnect(); listenConn = nil end
 
                 listenConn = trackConn(UserInputService.InputBegan:Connect(function(input, processed)
@@ -2349,9 +2205,6 @@ function Library:CreateWindow(options)
                     if input.UserInputType == Enum.UserInputType.Keyboard then
                         listening = false
                         if listenConn then listenConn:Disconnect(); listenConn = nil end
-                        TweenService:Create(bbG.Edge, TweenInfo.new(0.18), {
-                            Color = Color3.fromRGB(255, 255, 255), Transparency = 0.88
-                        }):Play()
                         bindKey(input.KeyCode)
                     end
                 end))
@@ -2367,8 +2220,7 @@ function Library:CreateWindow(options)
             frame.Size = UDim2.new(1, 0, 0, (lines or 2) * 22 + 22)
             frame.ZIndex = 3
             frame.Parent = TabPage
-            local g = Glass.Apply(frame, { Level = "Element", Radius = 12, EdgeT = 0.94 })
-            g.TintT = 0.35
+            Glass.Apply(frame, { Level = "Element", Radius = 12 })
 
             local lbl = Instance.new("TextLabel")
             lbl.Size = UDim2.new(1, -36, 1, -22)
