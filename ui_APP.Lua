@@ -2,7 +2,8 @@
     ═══════════════════════════════════════════════════════════════════════════
     LS Team UI Library · v4.2 "Ghost Fix"
     · 修复：Blur 无法关闭 / 状态锁 / 延迟闭包 / 多窗口 Blur 冲突
-    · 灵动岛点击改为 Toggle 主窗
+    · 灵动岛点击 Toggle 主窗
+    · InfoPanel 支持动态更新
     ═══════════════════════════════════════════════════════════════════════════
 ]]
 
@@ -43,7 +44,7 @@ local function SafeCall(fn, ...)
 end
 
 -- ═══════════════════════════════════════════════════════════════════════════
--- §3  ★ 修复 #1 #4：per-window 独立 Blur 控制器（幂等）
+-- §3  Blur 控制器（per-window 独立，幂等）
 -- ═══════════════════════════════════════════════════════════════════════════
 local function createBlurController()
     local state = { isOn = false, blur = nil }
@@ -61,7 +62,6 @@ local function createBlurController()
 
     local api = {}
 
-    -- ★ 幂等：重复调用 SetOn(true) 或 SetOn(false) 不会有副作用 ★
     function api.SetOn(on)
         on = not not on
         if on == state.isOn then return end
@@ -88,7 +88,6 @@ local function createBlurController()
 
     function api.IsOn() return state.isOn end
 
-    -- ★ Destroy 时强制关掉，不等 tween ★
     function api.Destroy()
         state.isOn = false
         if state.blur and state.blur.Parent then
@@ -419,7 +418,6 @@ local function CreateDynamicIsland(parent, theme, callbacks)
         TweenService:Create(pressScale,
             TweenInfo.new(0.08, Enum.EasingStyle.Quad, Enum.EasingDirection.Out),
             { Scale = 0.96 }):Play()
-        -- ★ 修复 #3：延迟闭包访问已销毁实例前检查 Parent ★
         task.delay(0.08, function()
             if not pressScale.Parent then return end
             TweenService:Create(pressScale,
@@ -495,7 +493,6 @@ function Library:CreateWindow(options)
     end
     loadTheme(initialTheme)
 
-    -- ★ 每个 Window 独立的 Blur 控制器 ★
     local blurCtrl = createBlurController()
 
     local ScreenGui = Instance.new("ScreenGui")
@@ -580,7 +577,6 @@ function Library:CreateWindow(options)
 
     local MainFrame, MainScale, Island
 
-    -- ★ 修复 #1 #2：状态锁，防止重复 show/hide ★
     local isMainOpen = false
     local isMainAnimating = false
 
@@ -623,7 +619,6 @@ function Library:CreateWindow(options)
         end)
     end
 
-    -- ★ 修复 #5：灵动岛点击 = Toggle 主窗 ★
     local function toggleMain()
         if isMainOpen then
             hideMain()
@@ -1826,6 +1821,12 @@ function Library:CreateWindow(options)
                 local s = avWrap:FindFirstChildOfClass("UIStroke")
                 if s then s.Color = t.Accent end
             end)
+
+            -- 动态更新方法
+            panel.SetServerInfo = function(text) sL.Text = text end
+            panel.SetExecutorInfo = function(text) eL.Text = text end
+            panel.SetPlayerName = function(text) nL.Text = text end
+
             return panel
         end
 
@@ -2258,9 +2259,6 @@ function Library:CreateWindow(options)
         return Elements
     end
 
-    -- ═══════════════════════════════════════════════════════════════════
-    -- ★ 修复 #4：Destroy 时强制清理 blur + 所有状态 ★
-    -- ═══════════════════════════════════════════════════════════════════
     function Window:Destroy()
         isMainOpen = false
         isMainAnimating = false
@@ -2272,8 +2270,6 @@ function Library:CreateWindow(options)
         activeKeybinds = {}
 
         if islandUnsub then islandUnsub() end
-
-        -- ★ 强制关 Blur，不等 tween ★
         blurCtrl.Destroy()
 
         if Island then Island.Destroy() end
