@@ -1,9 +1,8 @@
 --[[
     ═══════════════════════════════════════════════════════════════════════════
-    LS Team UI Library · v4.1 "True Deep Space"
-    · 完全不透明深空夜，无脏感
-    · 灵动岛宽度修复
-    · Tab 选中填充式
+    LS Team UI Library · v4.2 "Ghost Fix"
+    · 修复：Blur 无法关闭 / 状态锁 / 延迟闭包 / 多窗口 Blur 冲突
+    · 灵动岛点击改为 Toggle 主窗
     ═══════════════════════════════════════════════════════════════════════════
 ]]
 
@@ -44,14 +43,12 @@ local function SafeCall(fn, ...)
 end
 
 -- ═══════════════════════════════════════════════════════════════════════════
--- §3  背景模糊（弱化版）
+-- §3  ★ 修复 #1 #4：per-window 独立 Blur 控制器（幂等）
 -- ═══════════════════════════════════════════════════════════════════════════
-local BlurController = {}
-do
-    local state = getgenv().LS_UI_BlurState or { count = 0, blur = nil }
-    getgenv().LS_UI_BlurState = state
+local function createBlurController()
+    local state = { isOn = false, blur = nil }
 
-    function BlurController.Acquire()
+    local function ensureBlur()
         if not state.blur or not state.blur.Parent then
             local b = Instance.new("BlurEffect")
             b.Name = "LS_UI_Blur"
@@ -59,30 +56,55 @@ do
             b.Parent = Lighting
             state.blur = b
         end
-        state.count = state.count + 1
-        -- 弱化：从 18 → 8
-        TweenService:Create(state.blur, TweenInfo.new(0.4), { Size = 8 }):Play()
+        return state.blur
     end
 
-    function BlurController.Release()
-        state.count = math.max(0, state.count - 1)
-        if state.count == 0 and state.blur and state.blur.Parent then
-            local b = state.blur
-            local t = TweenService:Create(b, TweenInfo.new(0.35), { Size = 0 })
+    local api = {}
+
+    -- ★ 幂等：重复调用 SetOn(true) 或 SetOn(false) 不会有副作用 ★
+    function api.SetOn(on)
+        on = not not on
+        if on == state.isOn then return end
+        state.isOn = on
+
+        local b = ensureBlur()
+        if on then
+            TweenService:Create(b,
+                TweenInfo.new(0.4, Enum.EasingStyle.Quart, Enum.EasingDirection.Out),
+                { Size = 8 }):Play()
+        else
+            local t = TweenService:Create(b,
+                TweenInfo.new(0.35, Enum.EasingStyle.Quart, Enum.EasingDirection.Out),
+                { Size = 0 })
             t:Play()
             t.Completed:Connect(function()
-                if state.count == 0 and b.Parent then b:Destroy() end
+                if not state.isOn and b.Parent then
+                    b:Destroy()
+                    if state.blur == b then state.blur = nil end
+                end
             end)
         end
     end
+
+    function api.IsOn() return state.isOn end
+
+    -- ★ Destroy 时强制关掉，不等 tween ★
+    function api.Destroy()
+        state.isOn = false
+        if state.blur and state.blur.Parent then
+            state.blur:Destroy()
+        end
+        state.blur = nil
+    end
+
+    return api
 end
 
 -- ═══════════════════════════════════════════════════════════════════════════
--- §4  深空夜玻璃（不透明版）
+-- §4  深空夜玻璃
 -- ═══════════════════════════════════════════════════════════════════════════
 local Glass = {}
 Glass.Levels = {
-    --          底色 (完全深色)         不透明   描边透明   圆角
     Window  = { Tint = Color3.fromRGB( 13,  13,  17), TintT = 0, EdgeT = 0.94, Radius = 26, Stroke = 1.0 },
     Panel   = { Tint = Color3.fromRGB( 20,  20,  26), TintT = 0, EdgeT = 0.96, Radius = 20, Stroke = 1.0 },
     Element = { Tint = Color3.fromRGB( 28,  28,  36), TintT = 0, EdgeT = 0.96, Radius = 14, Stroke = 1.0 },
@@ -112,56 +134,40 @@ function Glass.Apply(parent, opts)
 end
 
 -- ═══════════════════════════════════════════════════════════════════════════
--- §5  主题（深空夜配色）
+-- §5  主题
 -- ═══════════════════════════════════════════════════════════════════════════
 Library.Themes = {
     DeepSpace = {
-        Accent     = Color3.fromRGB( 10, 132, 255),
-        AccentHi   = Color3.fromRGB(120, 190, 255),
-        Text       = Color3.fromRGB(240, 240, 245),
-        SubText    = Color3.fromRGB(140, 140, 155),
-        HintText   = Color3.fromRGB( 85,  85, 100),
-        ToggleOff  = Color3.fromRGB( 55,  55,  68),
-        Divider    = Color3.fromRGB(255, 255, 255),
-        Success    = Color3.fromRGB( 48, 209,  88),
-        Warning    = Color3.fromRGB(255, 214,  10),
-        Danger     = Color3.fromRGB(255,  69,  58),
+        Accent = Color3.fromRGB(10, 132, 255), AccentHi = Color3.fromRGB(120, 190, 255),
+        Text = Color3.fromRGB(240, 240, 245), SubText = Color3.fromRGB(140, 140, 155),
+        HintText = Color3.fromRGB(85, 85, 100), ToggleOff = Color3.fromRGB(55, 55, 68),
+        Divider = Color3.fromRGB(255, 255, 255),
+        Success = Color3.fromRGB(48, 209, 88), Warning = Color3.fromRGB(255, 214, 10),
+        Danger = Color3.fromRGB(255, 69, 58),
     },
     Nebula = {
-        Accent     = Color3.fromRGB(160, 108, 255),
-        AccentHi   = Color3.fromRGB(210, 175, 255),
-        Text       = Color3.fromRGB(245, 240, 255),
-        SubText    = Color3.fromRGB(155, 145, 175),
-        HintText   = Color3.fromRGB( 95,  85, 115),
-        ToggleOff  = Color3.fromRGB( 60,  55,  75),
-        Divider    = Color3.fromRGB(255, 255, 255),
-        Success    = Color3.fromRGB( 80, 220, 160),
-        Warning    = Color3.fromRGB(255, 200,  80),
-        Danger     = Color3.fromRGB(255, 100, 110),
+        Accent = Color3.fromRGB(160, 108, 255), AccentHi = Color3.fromRGB(210, 175, 255),
+        Text = Color3.fromRGB(245, 240, 255), SubText = Color3.fromRGB(155, 145, 175),
+        HintText = Color3.fromRGB(95, 85, 115), ToggleOff = Color3.fromRGB(60, 55, 75),
+        Divider = Color3.fromRGB(255, 255, 255),
+        Success = Color3.fromRGB(80, 220, 160), Warning = Color3.fromRGB(255, 200, 80),
+        Danger = Color3.fromRGB(255, 100, 110),
     },
     Aurora = {
-        Accent     = Color3.fromRGB( 48, 220, 200),
-        AccentHi   = Color3.fromRGB(130, 245, 230),
-        Text       = Color3.fromRGB(235, 250, 250),
-        SubText    = Color3.fromRGB(140, 180, 180),
-        HintText   = Color3.fromRGB( 75, 115, 115),
-        ToggleOff  = Color3.fromRGB( 50,  70,  70),
-        Divider    = Color3.fromRGB(255, 255, 255),
-        Success    = Color3.fromRGB( 80, 230, 160),
-        Warning    = Color3.fromRGB(255, 200,  80),
-        Danger     = Color3.fromRGB(255, 110, 100),
+        Accent = Color3.fromRGB(48, 220, 200), AccentHi = Color3.fromRGB(130, 245, 230),
+        Text = Color3.fromRGB(235, 250, 250), SubText = Color3.fromRGB(140, 180, 180),
+        HintText = Color3.fromRGB(75, 115, 115), ToggleOff = Color3.fromRGB(50, 70, 70),
+        Divider = Color3.fromRGB(255, 255, 255),
+        Success = Color3.fromRGB(80, 230, 160), Warning = Color3.fromRGB(255, 200, 80),
+        Danger = Color3.fromRGB(255, 110, 100),
     },
     Ember = {
-        Accent     = Color3.fromRGB(255, 140,  60),
-        AccentHi   = Color3.fromRGB(255, 190, 130),
-        Text       = Color3.fromRGB(255, 245, 235),
-        SubText    = Color3.fromRGB(200, 170, 145),
-        HintText   = Color3.fromRGB(125,  95,  75),
-        ToggleOff  = Color3.fromRGB( 75,  60,  50),
-        Divider    = Color3.fromRGB(255, 255, 255),
-        Success    = Color3.fromRGB(150, 220, 120),
-        Warning    = Color3.fromRGB(255, 210, 100),
-        Danger     = Color3.fromRGB(255, 100,  90),
+        Accent = Color3.fromRGB(255, 140, 60), AccentHi = Color3.fromRGB(255, 190, 130),
+        Text = Color3.fromRGB(255, 245, 235), SubText = Color3.fromRGB(200, 170, 145),
+        HintText = Color3.fromRGB(125, 95, 75), ToggleOff = Color3.fromRGB(75, 60, 50),
+        Divider = Color3.fromRGB(255, 255, 255),
+        Success = Color3.fromRGB(150, 220, 120), Warning = Color3.fromRGB(255, 210, 100),
+        Danger = Color3.fromRGB(255, 100, 90),
     },
 }
 
@@ -215,7 +221,7 @@ do
 end
 
 -- ═══════════════════════════════════════════════════════════════════════════
--- §7  灵动岛（宽度修复版）
+-- §7  灵动岛
 -- ═══════════════════════════════════════════════════════════════════════════
 local function CreateDynamicIsland(parent, theme, callbacks)
     callbacks = callbacks or {}
@@ -249,7 +255,6 @@ local function CreateDynamicIsland(parent, theme, callbacks)
     islandStroke.ApplyStrokeMode = Enum.ApplyStrokeMode.Border
     islandStroke.Parent = Island
 
-    -- 左：头像
     local avatar = Instance.new("ImageLabel")
     avatar.Name = "Avatar"
     avatar.Size = UDim2.new(0, AVATAR_SIZE, 0, AVATAR_SIZE)
@@ -278,7 +283,6 @@ local function CreateDynamicIsland(parent, theme, callbacks)
         end)
     end)
 
-    -- 中：状态文字（短句）
     local centerLabel = Instance.new("TextLabel")
     centerLabel.Name = "StatusText"
     centerLabel.Position = UDim2.new(0, PAD + AVATAR_SIZE + 10, 0, 0)
@@ -292,7 +296,6 @@ local function CreateDynamicIsland(parent, theme, callbacks)
     centerLabel.ZIndex = 4
     centerLabel.Parent = Island
 
-    -- 右侧容器（右对齐）
     local rightHolder = Instance.new("Frame")
     rightHolder.Name = "RightHolder"
     rightHolder.AnchorPoint = Vector2.new(1, 0)
@@ -348,17 +351,12 @@ local function CreateDynamicIsland(parent, theme, callbacks)
     fpsLabel.ZIndex = 4
     fpsLabel.Parent = rightHolder
 
-    -- ★ 宽度计算：中文加 30% buffer ★
     local function updateWidth(animate)
-        local rawCenterW = MeasureText(centerLabel.Text, 13, Enum.Font.GothamSemibold).X
-        local centerW = rawCenterW * 1.15 + 8   -- 加 15% buffer + 8px 保险
+        local centerW = MeasureText(centerLabel.Text, 13, Enum.Font.GothamSemibold).X * 1.15 + 8
 
-        local rawPingW = MeasureText(pingLabel.Text, 12, Enum.Font.GothamMedium).X
-        local rawFpsW  = MeasureText(fpsLabel.Text, 12, Enum.Font.GothamMedium).X
-        local pingW = rawPingW + 6
-        local fpsW  = rawFpsW + 6
+        local pingW = MeasureText(pingLabel.Text, 12, Enum.Font.GothamMedium).X + 6
+        local fpsW  = MeasureText(fpsLabel.Text, 12, Enum.Font.GothamMedium).X + 6
 
-        -- 右侧总宽：statusDot(7) + 6 + ping + 6 + fps
         local extraWidgetsW = 0
         for _, child in ipairs(rightHolder:GetChildren()) do
             if child:IsA("GuiObject") and not child:IsA("UIListLayout")
@@ -384,7 +382,6 @@ local function CreateDynamicIsland(parent, theme, callbacks)
         end
     end
 
-    -- ping/fps 刷新
     task.spawn(function()
         local frameCount = 0
         local lastTime = tick()
@@ -414,7 +411,6 @@ local function CreateDynamicIsland(parent, theme, callbacks)
         if conn then conn:Disconnect() end
     end)
 
-    -- 点击 = 打开主窗
     local pressScale = Instance.new("UIScale")
     pressScale.Scale = 1
     pressScale.Parent = Island
@@ -423,7 +419,9 @@ local function CreateDynamicIsland(parent, theme, callbacks)
         TweenService:Create(pressScale,
             TweenInfo.new(0.08, Enum.EasingStyle.Quad, Enum.EasingDirection.Out),
             { Scale = 0.96 }):Play()
+        -- ★ 修复 #3：延迟闭包访问已销毁实例前检查 Parent ★
         task.delay(0.08, function()
+            if not pressScale.Parent then return end
             TweenService:Create(pressScale,
                 TweenInfo.new(0.22, Enum.EasingStyle.Back, Enum.EasingDirection.Out),
                 { Scale = 1 }):Play()
@@ -465,9 +463,7 @@ local function CreateDynamicIsland(parent, theme, callbacks)
 
     function API.AddWidget(side, obj)
         if not obj then return end
-        if side == "right" then
-            obj.Parent = rightHolder
-        end
+        if side == "right" then obj.Parent = rightHolder end
         updateWidth(true)
         return obj
     end
@@ -498,6 +494,9 @@ function Library:CreateWindow(options)
         for k, _ in pairs(Library.Themes.DeepSpace) do Theme[k] = t[k] end
     end
     loadTheme(initialTheme)
+
+    -- ★ 每个 Window 独立的 Blur 控制器 ★
+    local blurCtrl = createBlurController()
 
     local ScreenGui = Instance.new("ScreenGui")
     ScreenGui.Name = "LS_UI_" .. tostring(math.random(100000, 999999))
@@ -531,7 +530,6 @@ function Library:CreateWindow(options)
         for _, fn in pairs(themeRegistry) do pcall(fn, Theme) end
     end
 
-    -- 遮罩
     local Overlay = Instance.new("TextButton")
     Overlay.Size = UDim2.new(1, 0, 1, 0)
     Overlay.BackgroundTransparency = 1
@@ -564,7 +562,6 @@ function Library:CreateWindow(options)
         Overlay.Active = false
     end
 
-    -- 通知容器
     local NotifContainer = Instance.new("Frame")
     NotifContainer.AnchorPoint = Vector2.new(1, 0)
     NotifContainer.Position = UDim2.new(1, -14, 0, 62)
@@ -583,29 +580,62 @@ function Library:CreateWindow(options)
 
     local MainFrame, MainScale, Island
 
+    -- ★ 修复 #1 #2：状态锁，防止重复 show/hide ★
+    local isMainOpen = false
+    local isMainAnimating = false
+
     local function showMain()
+        if isMainOpen or isMainAnimating then return end
+        isMainOpen = true
+        isMainAnimating = true
+
         MainFrame.Visible = true
         MainScale.Scale = 0
-        TweenService:Create(MainScale,
+
+        local t = TweenService:Create(MainScale,
             TweenInfo.new(0.45, Enum.EasingStyle.Back, Enum.EasingDirection.Out),
-            { Scale = 1 }):Play()
-        BlurController.Acquire()
-    end
-    local function hideMain()
-        BlurController.Release()
-        TweenService:Create(MainScale,
-            TweenInfo.new(0.3, Enum.EasingStyle.Quart, Enum.EasingDirection.In),
-            { Scale = 0 }):Play()
-        task.delay(0.3, function()
-            if MainScale.Scale < 0.05 then MainFrame.Visible = false end
+            { Scale = 1 })
+        t:Play()
+        blurCtrl.SetOn(true)
+
+        t.Completed:Connect(function()
+            isMainAnimating = false
         end)
     end
 
+    local function hideMain()
+        if not isMainOpen or isMainAnimating then return end
+        isMainOpen = false
+        isMainAnimating = true
+
+        blurCtrl.SetOn(false)
+
+        local t = TweenService:Create(MainScale,
+            TweenInfo.new(0.3, Enum.EasingStyle.Quart, Enum.EasingDirection.In),
+            { Scale = 0 })
+        t:Play()
+
+        t.Completed:Connect(function()
+            if not isMainOpen then
+                MainFrame.Visible = false
+            end
+            isMainAnimating = false
+        end)
+    end
+
+    -- ★ 修复 #5：灵动岛点击 = Toggle 主窗 ★
+    local function toggleMain()
+        if isMainOpen then
+            hideMain()
+        else
+            showMain()
+        end
+    end
+
     Island = CreateDynamicIsland(ScreenGui, Theme, {
-        OnClick = function() showMain() end,
+        OnClick = function() toggleMain() end,
     })
 
-    -- FeatureCounter 订阅
     local islandUnsub = FeatureCounter.Subscribe(function(count)
         if count == 0 then
             Island.SetStatus("待机")
@@ -616,7 +646,6 @@ function Library:CreateWindow(options)
         end
     end)
 
-    -- 主窗
     MainFrame = Instance.new("Frame")
     MainFrame.Name = "MainFrame"
     MainFrame.AnchorPoint = Vector2.new(0.5, 0.5)
@@ -626,7 +655,7 @@ function Library:CreateWindow(options)
     MainFrame.Visible = false
     MainFrame.ZIndex = 100
     MainFrame.Parent = ScreenGui
-    local mainGlass = Glass.Apply(MainFrame, { Level = "Window", Radius = 26 })
+    Glass.Apply(MainFrame, { Level = "Window", Radius = 26 })
 
     MainScale = Instance.new("UIScale")
     MainScale.Scale = 0
@@ -637,7 +666,6 @@ function Library:CreateWindow(options)
     sizeConstraint.MinSize = Vector2.new(340, 300)
     sizeConstraint.Parent = MainFrame
 
-    -- 顶部栏
     local TopBar = Instance.new("Frame")
     TopBar.Name = "TopBar"
     TopBar.Size = UDim2.new(1, 0, 0, 52)
@@ -668,7 +696,7 @@ function Library:CreateWindow(options)
     closeBtn.AutoButtonColor = false
     closeBtn.ZIndex = 3
     closeBtn.Parent = TopBar
-    local closeGlass = Glass.Apply(closeBtn, { Level = "Bubble", Radius = 15 })
+    Glass.Apply(closeBtn, { Level = "Bubble", Radius = 15 })
 
     closeBtn.MouseEnter:Connect(function()
         TweenService:Create(closeBtn, TweenInfo.new(0.18), {
@@ -695,7 +723,6 @@ function Library:CreateWindow(options)
         closeBtn.TextColor3 = t.SubText
     end)
 
-    -- 主窗拖动
     do
         local dragging, dragStart, startPos
         TopBar.InputBegan:Connect(function(input)
@@ -725,7 +752,6 @@ function Library:CreateWindow(options)
         end))
     end
 
-    -- 侧边栏
     local Sidebar = Instance.new("Frame")
     Sidebar.Name = "Sidebar"
     Sidebar.Size = UDim2.new(0.30, 0, 1, -52)
@@ -767,7 +793,6 @@ function Library:CreateWindow(options)
         TabContainer.CanvasSize = UDim2.new(0, 0, 0, tabLayout.AbsoluteContentSize.Y + 8)
     end)
 
-    -- 内容区
     local ContentContainer = Instance.new("Frame")
     ContentContainer.Name = "ContentContainer"
     ContentContainer.Size = UDim2.new(0.70, 0, 1, -52)
@@ -776,7 +801,6 @@ function Library:CreateWindow(options)
     ContentContainer.ZIndex = 2
     ContentContainer.Parent = MainFrame
 
-    -- 通知
     local function pushNotification(title, message, duration, opts)
         title = title or "通知"
         message = message or ""
@@ -865,9 +889,6 @@ function Library:CreateWindow(options)
         return notif
     end
 
-    -- ═══════════════════════════════════════════════════════════════════
-    -- Window
-    -- ═══════════════════════════════════════════════════════════════════
     local Window = {}
     local Tabs = {}
     local firstTab = true
@@ -920,6 +941,8 @@ function Library:CreateWindow(options)
 
     function Window:ShowMain() showMain() end
     function Window:HideMain() hideMain() end
+    function Window:ToggleMain() toggleMain() end
+    function Window:IsMainOpen() return isMainOpen end
 
     function Window:GetIsland() return Island end
     function Window:SetIslandStatus(text) Island.SetStatus(text) end
@@ -937,9 +960,6 @@ function Library:CreateWindow(options)
         return FeatureCounter.Count()
     end
 
-    -- ═══════════════════════════════════════════════════════════════════
-    -- CreateTab
-    -- ═══════════════════════════════════════════════════════════════════
     function Window:CreateTab(TabName, iconId, iconOptions)
         local TabButton = Instance.new("TextButton")
         TabButton.Name = TabName
@@ -1004,7 +1024,6 @@ function Library:CreateWindow(options)
         local isSelected = false
         local function apply(t)
             if isSelected then
-                -- 选中：填充 accent，不要描边
                 tabText.TextColor3 = t.AccentHi
                 tbGlass.Edge.Transparency = 1
                 TabButton.BackgroundColor3 = t.Accent
@@ -1079,9 +1098,6 @@ function Library:CreateWindow(options)
             end
         end)
 
-        -- ═══════════════════════════════════════════════════════════
-        -- Elements
-        -- ═══════════════════════════════════════════════════════════
         local Elements = {}
 
         function Elements:CreateLabel(text)
@@ -1169,7 +1185,7 @@ function Library:CreateWindow(options)
             btn.AutoButtonColor = false
             btn.ZIndex = 3
             btn.Parent = TabPage
-            local g = Glass.Apply(btn, { Level = "Element", Radius = 12 })
+            Glass.Apply(btn, { Level = "Element", Radius = 12 })
 
             local lbl = Instance.new("TextLabel")
             lbl.Size = UDim2.new(1, -56, 1, 0)
@@ -2172,7 +2188,7 @@ function Library:CreateWindow(options)
             bindBtn.AutoButtonColor = false
             bindBtn.ZIndex = 4
             bindBtn.Parent = frame
-            local bbG = Glass.Apply(bindBtn, { Level = "Bubble", Radius = 8 })
+            Glass.Apply(bindBtn, { Level = "Bubble", Radius = 8 })
 
             RegisterTheme(function(t)
                 lbl.TextColor3 = t.Text
@@ -2243,16 +2259,23 @@ function Library:CreateWindow(options)
     end
 
     -- ═══════════════════════════════════════════════════════════════════
-    -- Destroy
+    -- ★ 修复 #4：Destroy 时强制清理 blur + 所有状态 ★
     -- ═══════════════════════════════════════════════════════════════════
     function Window:Destroy()
+        isMainOpen = false
+        isMainAnimating = false
+
         closeDropdown()
         disconnectAll()
         clearAllOverlays()
         themeRegistry = {}
         activeKeybinds = {}
+
         if islandUnsub then islandUnsub() end
-        BlurController.Release()
+
+        -- ★ 强制关 Blur，不等 tween ★
+        blurCtrl.Destroy()
+
         if Island then Island.Destroy() end
         if ScreenGui then ScreenGui:Destroy() end
     end
