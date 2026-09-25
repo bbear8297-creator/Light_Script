@@ -20,9 +20,9 @@ local Library = {}
 -- 常量
 -- ═══════════════════════════════════════════════════════════
 local ICONS = {
-    Close  = "rbxassetid://10709752508",   -- lucide x
-    ChevD  = "rbxassetid://10709753272",   -- lucide download（向下箭头）
-    ChevR  = "rbxassetid://10709752405",   -- lucide check（占位）
+    Close  = "rbxassetid://10709752508",
+    ChevD  = "rbxassetid://10709753272",
+    ChevR  = "rbxassetid://10709752405",
 }
 
 -- ═══════════════════════════════════════════════════════════
@@ -49,7 +49,7 @@ if not pcall(function() return targetGui.Name end) then
 end
 
 -- ═══════════════════════════════════════════════════════════
--- Blur 控制器（每窗口独立，幂等）
+-- Blur 控制器
 -- ═══════════════════════════════════════════════════════════
 local function createBlurController()
     local state = { isOn = false, blur = nil }
@@ -272,7 +272,7 @@ local function CreateDynamicIsland(parent, theme, callbacks)
     centerLabel.ZIndex = 4
     centerLabel.Parent = Island
 
-    -- 右侧容器
+    -- 右侧容器（横向：dot + ping + fps）
     local rightHolder = Instance.new("Frame")
     rightHolder.AnchorPoint = Vector2.new(1, 0)
     rightHolder.Position = UDim2.new(1, -PAD, 0, 0)
@@ -515,6 +515,7 @@ function Library:CreateWindow(options)
     NotifContainer.Parent = ScreenGui
     do
         local l = Instance.new("UIListLayout")
+        l.FillDirection = Enum.FillDirection.Vertical   -- ★ 关键
         l.SortOrder = Enum.SortOrder.LayoutOrder
         l.Padding = UDim.new(0, 8)
         l.Parent = NotifContainer
@@ -609,7 +610,7 @@ function Library:CreateWindow(options)
     TopTitle.ZIndex = 3
     TopTitle.Parent = TopBar
 
-    -- 关闭按钮（图片图标）
+    -- 关闭按钮
     local closeBtn = Instance.new("TextButton")
     closeBtn.Size = UDim2.new(0, 30, 0, 30)
     closeBtn.AnchorPoint = Vector2.new(1, 0.5)
@@ -718,6 +719,7 @@ function Library:CreateWindow(options)
         p.Parent = sidebarGlass
     end
     local tabLayout = Instance.new("UIListLayout")
+    tabLayout.FillDirection = Enum.FillDirection.Vertical   -- ★ 关键
     tabLayout.SortOrder = Enum.SortOrder.LayoutOrder
     tabLayout.Padding = UDim.new(0, 4)
     tabLayout.HorizontalAlignment = Enum.HorizontalAlignment.Center
@@ -902,7 +904,7 @@ function Library:CreateWindow(options)
         holder.Parent = TabButton
         do
             local l = Instance.new("UIListLayout")
-            l.FillDirection = Enum.FillDirection.Horizontal
+            l.FillDirection = Enum.FillDirection.Horizontal   -- ★ icon + text 横排
             l.VerticalAlignment = Enum.VerticalAlignment.Center
             l.Padding = UDim.new(0, 10)
             l.Parent = holder
@@ -965,6 +967,7 @@ function Library:CreateWindow(options)
         RegisterTheme(function(t) TabPage.ScrollBarImageColor3 = t.Accent end)
 
         local pageLayout = Instance.new("UIListLayout")
+        pageLayout.FillDirection = Enum.FillDirection.Vertical   -- ★ 关键
         pageLayout.SortOrder = Enum.SortOrder.LayoutOrder
         pageLayout.Padding = UDim.new(0, 8)
         pageLayout.Parent = TabPage
@@ -1106,7 +1109,6 @@ function Library:CreateWindow(options)
             lbl.ZIndex = 4
             lbl.Parent = btn
 
-            -- 右箭头：用 ASCII ">"（100% 兼容）
             local arrow = Instance.new("TextLabel")
             arrow.Size = UDim2.new(0, 24, 1, 0)
             arrow.Position = UDim2.new(1, -32, 0, 0)
@@ -1399,7 +1401,6 @@ function Library:CreateWindow(options)
             dropBtn.Parent = frame
             Glass.Apply(dropBtn, { Level = "Bubble" })
 
-            -- 自绘 V 形箭头
             local chevron = Instance.new("Frame")
             chevron.Size = UDim2.new(0, 8, 0, 5)
             chevron.AnchorPoint = Vector2.new(1, 0.5)
@@ -1426,7 +1427,6 @@ function Library:CreateWindow(options)
             ch2.ZIndex = 6
             ch2.Parent = chevron
 
-            -- 让文字区避开箭头
             local pad = Instance.new("UIPadding")
             pad.PaddingRight = UDim.new(0, 18)
             pad.Parent = dropBtn
@@ -1450,6 +1450,7 @@ function Library:CreateWindow(options)
                 Glass.Apply(list, { Level = "Panel", Radius = 14 })
 
                 local l = Instance.new("UIListLayout")
+                l.FillDirection = Enum.FillDirection.Vertical   -- ★ 关键
                 l.Padding = UDim.new(0, 2)
                 l.Parent = list
                 local p = Instance.new("UIPadding")
@@ -1715,6 +1716,7 @@ function Library:CreateWindow(options)
             infoFrame.Parent = panel
             do
                 local l = Instance.new("UIListLayout")
+                l.FillDirection = Enum.FillDirection.Vertical   -- ★ 关键
                 l.Padding = UDim.new(0, 3)
                 l.Parent = infoFrame
             end
@@ -1834,7 +1836,6 @@ function Library:CreateWindow(options)
                     0,
                     math.clamp(ap.Y + asz.Y + 8, 10, ScreenGui.AbsoluteSize.Y - 258))
 
-                -- 拖动条
                 local bar = Instance.new("TextButton")
                 bar.Size = UDim2.new(1, 0, 0, 22)
                 bar.BackgroundTransparency = 1
@@ -1868,7 +1869,6 @@ function Library:CreateWindow(options)
                     end))
                 end
 
-                -- SV 区
                 local svBox = Instance.new("Frame")
                 svBox.Size = UDim2.new(0, 190, 0, 190)
                 svBox.Position = UDim2.new(0, 12, 0, 30)
@@ -1919,7 +1919,6 @@ function Library:CreateWindow(options)
                     gr.Parent = black
                 end
 
-                -- 色相条
                 local hue = Instance.new("Frame")
                 hue.Size = UDim2.new(0, 24, 0, 190)
                 hue.Position = UDim2.new(0, 210, 0, 30)
@@ -1945,7 +1944,6 @@ function Library:CreateWindow(options)
                     gr.Parent = hue
                 end
 
-                -- 指示器
                 local svInd = Instance.new("Frame")
                 svInd.Size = UDim2.new(0, 14, 0, 14)
                 svInd.AnchorPoint = Vector2.new(0.5, 0.5)
