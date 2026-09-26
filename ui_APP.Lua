@@ -1,6 +1,6 @@
 --[[
     ═══════════════════════════════════════════════════════════
-    LS Team UI Library · v1.0 正式版
+    LS Team UI Library · v1.0 正式版（修复版）
     深空夜 · 灵动岛 · 功能计数器
     ═══════════════════════════════════════════════════════════
 ]]
@@ -20,9 +20,9 @@ local Library = {}
 -- 常量
 -- ═══════════════════════════════════════════════════════════
 local ICONS = {
-    Close  = "rbxassetid://10709752508",   -- lucide x
-    ChevD  = "rbxassetid://10709753272",   -- lucide download（向下箭头）
-    ChevR  = "rbxassetid://10709752405",   -- lucide check（占位）
+    Close  = "rbxassetid://10709752508",
+    ChevD  = "rbxassetid://10709753272",
+    ChevR  = "rbxassetid://10709752405",
 }
 
 -- ═══════════════════════════════════════════════════════════
@@ -38,6 +38,21 @@ local function Safe(fn, ...)
     if not ok then warn("[LS_UI] " .. tostring(err)) end
 end
 
+-- ★ 安全给 Instance 附加方法
+local function attachMethod(inst, name, fn)
+    if not inst or not name or type(fn) ~= "function" then return false end
+    local ok = pcall(function()
+        rawset(inst, name, fn)
+    end)
+    if not ok then
+        -- 极端环境：退回到 instance.name = fn
+        ok = pcall(function()
+            inst[name] = fn
+        end)
+    end
+    return ok
+end
+
 -- 目标 GUI 层
 local targetGui
 do
@@ -49,7 +64,7 @@ if not pcall(function() return targetGui.Name end) then
 end
 
 -- ═══════════════════════════════════════════════════════════
--- Blur 控制器（每窗口独立，幂等）
+-- Blur 控制器
 -- ═══════════════════════════════════════════════════════════
 local function createBlurController()
     local state = { isOn = false, blur = nil }
@@ -232,7 +247,6 @@ local function CreateDynamicIsland(parent, theme, callbacks)
     stroke.ApplyStrokeMode = Enum.ApplyStrokeMode.Border
     stroke.Parent = Island
 
-    -- 头像
     local avatar = Instance.new("ImageLabel")
     avatar.Size = UDim2.new(0, AVATAR, 0, AVATAR)
     avatar.Position = UDim2.new(0, PAD, 0.5, -AVATAR / 2)
@@ -259,7 +273,6 @@ local function CreateDynamicIsland(parent, theme, callbacks)
         end)
     end)
 
-    -- 中间状态文字
     local centerLabel = Instance.new("TextLabel")
     centerLabel.Position = UDim2.new(0, PAD + AVATAR + 10, 0, 0)
     centerLabel.Size = UDim2.new(0, 100, 1, 0)
@@ -272,7 +285,6 @@ local function CreateDynamicIsland(parent, theme, callbacks)
     centerLabel.ZIndex = 4
     centerLabel.Parent = Island
 
-    -- 右侧容器
     local rightHolder = Instance.new("Frame")
     rightHolder.AnchorPoint = Vector2.new(1, 0)
     rightHolder.Position = UDim2.new(1, -PAD, 0, 0)
@@ -282,7 +294,7 @@ local function CreateDynamicIsland(parent, theme, callbacks)
     rightHolder.Parent = Island
 
     local rl = Instance.new("UIListLayout")
-    rl.FillDirection = Enum.FillDirection.Horizontal
+    rl.FillDirection = Enum.FillDirection.Horizontal  -- 灵动岛右侧保持横排
     rl.HorizontalAlignment = Enum.HorizontalAlignment.Right
     rl.VerticalAlignment = Enum.VerticalAlignment.Center
     rl.Padding = UDim.new(0, 6)
@@ -324,7 +336,6 @@ local function CreateDynamicIsland(parent, theme, callbacks)
     fpsLabel.ZIndex = 4
     fpsLabel.Parent = rightHolder
 
-    -- 宽度自适应
     local function updateWidth(animate)
         local centerW = Measure(centerLabel.Text, 13, Enum.Font.GothamSemibold).X * 1.15 + 8
         local pingW = Measure(pingLabel.Text, 12, Enum.Font.GothamMedium).X + 6
@@ -353,7 +364,6 @@ local function CreateDynamicIsland(parent, theme, callbacks)
         end
     end
 
-    -- ping/fps 刷新
     task.spawn(function()
         local frameCount, lastTime = 0, tick()
         local conn = RunService.RenderStepped:Connect(function() frameCount = frameCount + 1 end)
@@ -374,7 +384,6 @@ local function CreateDynamicIsland(parent, theme, callbacks)
         if conn then conn:Disconnect() end
     end)
 
-    -- 点击
     local pressScale = Instance.new("UIScale")
     pressScale.Scale = 1
     pressScale.Parent = Island
@@ -464,6 +473,8 @@ function Library:CreateWindow(options)
         globalConns = {}
     end
 
+    local cleanupStack = {}   -- ★ 新增：外部注册的清理函数
+
     local themeRegistry, themeCounter = {}, 0
     local function RegisterTheme(fn)
         themeCounter = themeCounter + 1
@@ -474,7 +485,6 @@ function Library:CreateWindow(options)
         for _, fn in pairs(themeRegistry) do pcall(fn, Theme) end
     end
 
-    -- 遮罩
     local Overlay = Instance.new("TextButton")
     Overlay.Size = UDim2.new(1, 0, 1, 0)
     Overlay.BackgroundTransparency = 1
@@ -505,7 +515,6 @@ function Library:CreateWindow(options)
         Overlay.Active = false
     end
 
-    -- 通知容器
     local NotifContainer = Instance.new("Frame")
     NotifContainer.AnchorPoint = Vector2.new(1, 0)
     NotifContainer.Position = UDim2.new(1, -14, 0, 62)
@@ -515,6 +524,7 @@ function Library:CreateWindow(options)
     NotifContainer.Parent = ScreenGui
     do
         local l = Instance.new("UIListLayout")
+        l.FillDirection = Enum.FillDirection.Vertical   -- ★ 修复：竖排通知
         l.SortOrder = Enum.SortOrder.LayoutOrder
         l.Padding = UDim.new(0, 8)
         l.Parent = NotifContainer
@@ -555,7 +565,6 @@ function Library:CreateWindow(options)
         if isMainOpen then hideMain() else showMain() end
     end
 
-    -- 灵动岛
     Island = CreateDynamicIsland(ScreenGui, Theme, {
         OnClick = function() toggleMain() end,
     })
@@ -570,7 +579,6 @@ function Library:CreateWindow(options)
         end
     end)
 
-    -- 主窗
     MainFrame = Instance.new("Frame")
     MainFrame.AnchorPoint = Vector2.new(0.5, 0.5)
     MainFrame.Position = UDim2.new(0.5, 0, 0.55, 0)
@@ -590,7 +598,6 @@ function Library:CreateWindow(options)
     sizeC.MinSize = Vector2.new(340, 300)
     sizeC.Parent = MainFrame
 
-    -- 顶部栏
     local TopBar = Instance.new("Frame")
     TopBar.Size = UDim2.new(1, 0, 0, 52)
     TopBar.BackgroundTransparency = 1
@@ -609,7 +616,6 @@ function Library:CreateWindow(options)
     TopTitle.ZIndex = 3
     TopTitle.Parent = TopBar
 
-    -- 关闭按钮（图片图标）
     local closeBtn = Instance.new("TextButton")
     closeBtn.Size = UDim2.new(0, 30, 0, 30)
     closeBtn.AnchorPoint = Vector2.new(1, 0.5)
@@ -660,7 +666,6 @@ function Library:CreateWindow(options)
         closeIcon.ImageColor3 = t.SubText
     end)
 
-    -- 拖动
     do
         local dragging, dragStart, startPos
         TopBar.InputBegan:Connect(function(input)
@@ -687,7 +692,6 @@ function Library:CreateWindow(options)
         end))
     end
 
-    -- 侧边栏
     local Sidebar = Instance.new("Frame")
     Sidebar.Size = UDim2.new(0.30, 0, 1, -52)
     Sidebar.Position = UDim2.new(0, 0, 0, 52)
@@ -718,6 +722,7 @@ function Library:CreateWindow(options)
         p.Parent = sidebarGlass
     end
     local tabLayout = Instance.new("UIListLayout")
+    tabLayout.FillDirection = Enum.FillDirection.Vertical   -- ★ 修复：Tab 竖排
     tabLayout.SortOrder = Enum.SortOrder.LayoutOrder
     tabLayout.Padding = UDim.new(0, 4)
     tabLayout.HorizontalAlignment = Enum.HorizontalAlignment.Center
@@ -726,7 +731,6 @@ function Library:CreateWindow(options)
         TabContainer.CanvasSize = UDim2.new(0, 0, 0, tabLayout.AbsoluteContentSize.Y + 8)
     end)
 
-    -- 内容区
     local ContentContainer = Instance.new("Frame")
     ContentContainer.Size = UDim2.new(0.70, 0, 1, -52)
     ContentContainer.Position = UDim2.new(0.30, 0, 0, 52)
@@ -734,9 +738,6 @@ function Library:CreateWindow(options)
     ContentContainer.ZIndex = 2
     ContentContainer.Parent = MainFrame
 
-    -- ═══════════════════════════════════════════════════════
-    -- 通知
-    -- ═══════════════════════════════════════════════════════
     local function pushNotification(title, message, duration, opts)
         title, message, duration = title or "通知", message or "", duration or 4
         opts = opts or {}
@@ -819,9 +820,6 @@ function Library:CreateWindow(options)
         return notif
     end
 
-    -- ═══════════════════════════════════════════════════════
-    -- Window 对象
-    -- ═══════════════════════════════════════════════════════
     local Window = {}
     local Tabs = {}
     local firstTab = true
@@ -876,9 +874,16 @@ function Library:CreateWindow(options)
     function Window:SetFeatureActive(id, a) FeatureCounter.SetActive(id, a) end
     function Window:GetActiveFeatureCount() return FeatureCounter.Count() end
 
-    -- ═══════════════════════════════════════════════════════
-    -- CreateTab
-    -- ═══════════════════════════════════════════════════════
+    -- ★ 新增：文档里承诺的 API
+    function Window:TrackConnection(conn)
+        return track(conn)
+    end
+    function Window:AddCleanup(fn)
+        if type(fn) == "function" then
+            table.insert(cleanupStack, fn)
+        end
+    end
+
     function Window:CreateTab(TabName, iconId, iconOptions)
         local TabButton = Instance.new("TextButton")
         TabButton.Name = TabName
@@ -902,7 +907,7 @@ function Library:CreateWindow(options)
         holder.Parent = TabButton
         do
             local l = Instance.new("UIListLayout")
-            l.FillDirection = Enum.FillDirection.Horizontal
+            l.FillDirection = Enum.FillDirection.Horizontal   -- icon + text 横排
             l.VerticalAlignment = Enum.VerticalAlignment.Center
             l.Padding = UDim.new(0, 10)
             l.Parent = holder
@@ -965,6 +970,7 @@ function Library:CreateWindow(options)
         RegisterTheme(function(t) TabPage.ScrollBarImageColor3 = t.Accent end)
 
         local pageLayout = Instance.new("UIListLayout")
+        pageLayout.FillDirection = Enum.FillDirection.Vertical   -- ★ 修复：Tab 页内容竖排
         pageLayout.SortOrder = Enum.SortOrder.LayoutOrder
         pageLayout.Padding = UDim.new(0, 8)
         pageLayout.Parent = TabPage
@@ -1002,9 +1008,6 @@ function Library:CreateWindow(options)
             end
         end)
 
-        -- ═══════════════════════════════════════════════════
-        -- Elements
-        -- ═══════════════════════════════════════════════════
         local Elements = {}
 
         function Elements:CreateLabel(text)
@@ -1026,6 +1029,15 @@ function Library:CreateWindow(options)
             lbl.ZIndex = 4
             lbl.Parent = frame
             RegisterTheme(function(t) lbl.TextColor3 = t.SubText end)
+
+            -- ★ 附加 setText 方法
+            attachMethod(frame, "SetText", function(newText)
+                if lbl and lbl.Parent then lbl.Text = newText end
+            end)
+            attachMethod(frame, "SetValue", function(newText)
+                if lbl and lbl.Parent then lbl.Text = newText end
+            end)
+
             return frame
         end
 
@@ -1106,7 +1118,6 @@ function Library:CreateWindow(options)
             lbl.ZIndex = 4
             lbl.Parent = btn
 
-            -- 右箭头：用 ASCII ">"（100% 兼容）
             local arrow = Instance.new("TextLabel")
             arrow.Size = UDim2.new(0, 24, 1, 0)
             arrow.Position = UDim2.new(1, -32, 0, 0)
@@ -1399,7 +1410,6 @@ function Library:CreateWindow(options)
             dropBtn.Parent = frame
             Glass.Apply(dropBtn, { Level = "Bubble" })
 
-            -- 自绘 V 形箭头
             local chevron = Instance.new("Frame")
             chevron.Size = UDim2.new(0, 8, 0, 5)
             chevron.AnchorPoint = Vector2.new(1, 0.5)
@@ -1426,7 +1436,6 @@ function Library:CreateWindow(options)
             ch2.ZIndex = 6
             ch2.Parent = chevron
 
-            -- 让文字区避开箭头
             local pad = Instance.new("UIPadding")
             pad.PaddingRight = UDim.new(0, 18)
             pad.Parent = dropBtn
@@ -1450,6 +1459,7 @@ function Library:CreateWindow(options)
                 Glass.Apply(list, { Level = "Panel", Radius = 14 })
 
                 local l = Instance.new("UIListLayout")
+                l.FillDirection = Enum.FillDirection.Vertical   -- ★ 修复：下拉选项竖排
                 l.Padding = UDim.new(0, 2)
                 l.Parent = list
                 local p = Instance.new("UIPadding")
@@ -1715,6 +1725,7 @@ function Library:CreateWindow(options)
             infoFrame.Parent = panel
             do
                 local l = Instance.new("UIListLayout")
+                l.FillDirection = Enum.FillDirection.Vertical   -- ★ 修复：信息竖排
                 l.Padding = UDim.new(0, 3)
                 l.Parent = infoFrame
             end
@@ -1745,9 +1756,16 @@ function Library:CreateWindow(options)
                 if s then s.Color = t.Accent end
             end)
 
-            panel.SetServerInfo = function(text) sL.Text = text end
-            panel.SetExecutorInfo = function(text) eL.Text = text end
-            panel.SetPlayerName = function(text) nL.Text = text end
+            -- ★ 关键修复：用 attachMethod（rawset）附加方法
+            attachMethod(panel, "SetServerInfo", function(text)
+                if sL and sL.Parent then sL.Text = tostring(text) end
+            end)
+            attachMethod(panel, "SetExecutorInfo", function(text)
+                if eL and eL.Parent then eL.Text = tostring(text) end
+            end)
+            attachMethod(panel, "SetPlayerName", function(text)
+                if nL and nL.Parent then nL.Text = tostring(text) end
+            end)
 
             return panel
         end
@@ -1834,7 +1852,6 @@ function Library:CreateWindow(options)
                     0,
                     math.clamp(ap.Y + asz.Y + 8, 10, ScreenGui.AbsoluteSize.Y - 258))
 
-                -- 拖动条
                 local bar = Instance.new("TextButton")
                 bar.Size = UDim2.new(1, 0, 0, 22)
                 bar.BackgroundTransparency = 1
@@ -1868,7 +1885,6 @@ function Library:CreateWindow(options)
                     end))
                 end
 
-                -- SV 区
                 local svBox = Instance.new("Frame")
                 svBox.Size = UDim2.new(0, 190, 0, 190)
                 svBox.Position = UDim2.new(0, 12, 0, 30)
@@ -1919,7 +1935,6 @@ function Library:CreateWindow(options)
                     gr.Parent = black
                 end
 
-                -- 色相条
                 local hue = Instance.new("Frame")
                 hue.Size = UDim2.new(0, 24, 0, 190)
                 hue.Position = UDim2.new(0, 210, 0, 30)
@@ -1945,7 +1960,6 @@ function Library:CreateWindow(options)
                     gr.Parent = hue
                 end
 
-                -- 指示器
                 local svInd = Instance.new("Frame")
                 svInd.Size = UDim2.new(0, 14, 0, 14)
                 svInd.AnchorPoint = Vector2.new(0.5, 0.5)
@@ -2174,9 +2188,13 @@ function Library:CreateWindow(options)
         return Elements
     end
 
-    -- ═══════════════════════════════════════════════════════
-    -- Destroy
-    -- ═══════════════════════════════════════════════════════
+    -- ★ 新增：清理外部函数
+    function Window:AddCleanup(fn)
+        if type(fn) == "function" then
+            table.insert(cleanupStack, fn)
+        end
+    end
+
     function Window:Destroy()
         isMainOpen, isMainAnimating = false, false
         closeDropdown()
@@ -2184,6 +2202,13 @@ function Library:CreateWindow(options)
         clearOverlays()
         themeRegistry = {}
         activeKeybinds = {}
+
+        -- 逆序执行清理栈
+        for i = #cleanupStack, 1, -1 do
+            pcall(cleanupStack[i])
+        end
+        cleanupStack = {}
+
         if islandUnsub then islandUnsub() end
         blurCtrl.Destroy()
         if Island then Island.Destroy() end
@@ -2191,6 +2216,31 @@ function Library:CreateWindow(options)
     end
 
     return Window
+end
+
+-- ★ 新增：全局清理
+local AllWindows = setmetatable({}, { __mode = "v" })
+
+function Library:DestroyAll()
+    for _, win in pairs(AllWindows) do
+        if win and type(win.Destroy) == "function" then
+            pcall(function() win:Destroy() end)
+        end
+    end
+    -- 兜底：清掉所有遗留 LS_UI Blur
+    for _, v in ipairs(Lighting:GetChildren()) do
+        if v:IsA("BlurEffect") and v.Name == "LS_UI_Blur" then
+            v:Destroy()
+        end
+    end
+end
+
+-- 包装 CreateWindow，记录实例
+local _origCreateWindow = Library.CreateWindow
+Library.CreateWindow = function(self, ...)
+    local win = _origCreateWindow(self, ...)
+    AllWindows[#AllWindows + 1] = win
+    return win
 end
 
 return Library
