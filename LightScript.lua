@@ -551,11 +551,59 @@ end
 --   甩飞时给自己写天文速度，物理引擎会按"撕裂伤害"打死角色。
 --   做法：每帧补满血 + 关掉 BreakJointsOnDeath + CharacterAdded 后重新接管。
 -- ══════════════════════════════════════════════════════════
-local God = { on = false, conn = nil, charConn = nil }
+local God = { on = false, conn = nil, charConn = nil, hooked = false, oldNewIndex = nil }
 
+function God:hum()
+    local c = LP.Character
+    return c and c:FindFirstChildOfClass("Humanoid")
+end
+
+-- ① 真无敌：钩 __newindex，吞掉任何把 Health 写成 0 的赋值
+function God:installHook()
+    if self.hooked then return true end
+    if type(hookmetamethod) ~= "function" or type(getrawmetatable) ~= "function" then
+        return false
+    end
+
+    local ok = pcall(function()
+        local mt = getrawmetatable(game)
+        local old = mt.__newindex
+        self.oldNewIndex = old
+
+        setreadonly(mt, false)
+        mt.__newindex = newcclosure(function(inst, key, value)
+            if key == "Health" and type(value) == "number" and value <= 0 then
+                if typeof(inst) == "Instance" and inst:IsA("Humanoid") then
+                    local char = LP.Character
+                    if char and inst:IsDescendantOf(char) then
+                        return
+                    end
+                end
+            end
+            return old(inst, key, value)
+        end)
+        setreadonly(mt, true)
+    end)
+
+    self.hooked = ok
+    return ok
+end
+
+function God:uninstallHook()
+    if not self.hooked or not self.oldNewIndex then return end
+    pcall(function()
+        local mt = getrawmetatable(game)
+        setreadonly(mt, false)
+        mt.__newindex = self.oldNewIndex
+        setreadonly(mt, true)
+    end)
+    self.hooked = false
+    self.oldNewIndex = nil
+end
+
+-- ② 兜底：每帧补血 / 不散架 / 抬高空难高度
 function God:heal()
-    local char = LP.Character
-    local hum = char and char:FindFirstChildOfClass("Humanoid")
+    local hum = self:hum()
     if not hum then return end
     pcall(function()
         hum.BreakJointsOnDeath = false
@@ -566,6 +614,9 @@ end
 function God:start()
     if self.on then return end
     self.on = true
+
+    local hooked = self:installHook()
+    pcall(function() workspace.FallenPartsDestroyHeight = -math.huge end)
     self:heal()
 
     self.conn = RunService.Heartbeat:Connect(function()
@@ -574,24 +625,21 @@ function God:start()
 
     self.charConn = LP.CharacterAdded:Connect(function()
         task.wait(1)
-        if self.on then self:heal() end
+        if self.on then
+            self:heal()
+            pcall(function() workspace.FallenPartsDestroyHeight = -math.huge end)
+        end
     end)
+
+    return hooked
 end
 
 function God:stop()
     self.on = false
     if self.conn then self.conn:Disconnect(); self.conn = nil end
     if self.charConn then self.charConn:Disconnect(); self.charConn = nil end
+    self:uninstallHook()
 end
-
--- ══════════════════════════════════════════════════════════
--- Fling：SkidFling（原作 zqyDSUWX）
---   本质：把自己 CFrame 塞进目标身体里，配上天文级速度/角速度疯狂旋转，
---         物理求解器会把目标直接弹飞。
---   三个前置缺一不可：
---     1) 自己挂 BodyVelocity(0, MaxForce 9e9) → 锁住自己不被弹飞
---     2) 关掉 Seated 状态
---     3) FallenPartsDestroyHeight = NaN → 飞出去的部件不会被销毁
 -- ══════════════════════════════════════════════════════════
 function Fling(radius, duration)
     local char = LP.Character
