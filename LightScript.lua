@@ -437,11 +437,22 @@ end
 --   3) 每个部件挂 AlignPosition，每帧把目标位置指到环形槽位
 --   → 因为是服务器已知的部件，其他人也能看见
 -- ══════════════════════════════════════════════════════════
+-- ══════════════════════════════════════════════════════════
+-- Parts 环绕（照抄 Super Ring Parts 的算法）
+--   1) SimulationRadius = inf 抢物理所有权
+--   2) parts 列表：初始扫描 + DescendantAdded / DescendantRemoving 维护
+--   3) 每帧对每个部件算环形目标点，直接写 part.Velocity 朝目标推
+-- ══════════════════════════════════════════════════════════
 local Ring = {
-    on = false, count = 12, radius = 6, spin = 2,
-    scanRadius = 400,          -- 扫描半径：地图散件常常堆在远处，必须放宽
-    allowLocal = false,        -- 找不到散件时是否用本地方块兜底（默认关闭）
-    conn = nil, t = 0, items = {}, hijacked = 0,
+    on = false,
+    radius = 8,
+    height = 5,
+    rotationSpeed = 2.5,
+    attraction = 120,
+    maxParts = 60,
+    scanRadius = 150,
+    conn = nil, addedConn = nil, removedConn = nil,
+    parts = {}, hits = 0,
 }
 
 function Ring:claimOwnership()
@@ -449,221 +460,104 @@ function Ring:claimOwnership()
     pcall(function() LP.ReplicationFocus = workspace end)
 end
 
--- 按距离由近到远挑最近的 count 个未锚定、非角色部件
-function Ring:collect()
-    local myRoot = Fly:root()
-    if not myRoot then return {} end
-    local myPos = myRoot.Position
-
-    local cands = {}
-    for _, d in ipairs(workspace:GetDescendants()) do
-        if d:IsA("BasePart") and not d.Anchored and d ~= myRoot then
-            local model = d:FindFirstAncestorOfClass("Model")
-            local isCharacter = model and model:FindFirstChildOfClass("Humanoid") ~= nil
-            if not isCharacter then
-                local dist = (d.Position - myPos).Magnitude
-                if dist <= self.scanRadius then
-                    cands[#cands + 1] = { part = d, dist = dist }
-                end
-            end
-        end
-    end
-
-    table.sort(cands, function(a, b) return a.dist < b.dist end)
-
-    local out = {}
-    for i = 1, math.min(self.count, #cands) do
-        out[i] = cands[i].part
-    end
-    return out
-end
-
-function Ring:attach(p)
+function Ring:retain(p)
+    if not p:IsA("BasePart") then return false end
+    if p.Anchored then return false end
+    if not p:IsDescendantOf(workspace) then return false end
+    local char = LP.Character
+    if char and p:IsDescendantOf(char) then return false end
     pcall(function()
+        p.CustomPhysicalProperties = PhysicalProperties.new(0, 0, 0, 0, 0)
         p.CanCollide = false
-        p.Massless = true
     end)
-
-    local att = Instance.new("Attachment")
-    att.Name = "LS_RingAtt"
-    att.Parent = p
-
-    local ap = Instance.new("AlignPosition")
-    ap.Name = "LS_RingAlign"
-    ap.Mode = Enum.PositionAlignmentMode.OneAttachment
-    ap.Attachment0 = att
-    ap.MaxForce = 1e9
-    ap.MaxVelocity = math.huge
-    ap.Responsiveness = 200
-    ap.Position = p.Position
-    ap.Parent = p
-
-    local ao = Instance.new("AlignOrientation")
-    ao.Name = "LS_RingAlignO"
-    ao.Mode = Enum.OrientationAlignmentMode.OneAttachment
-    ao.Attachment0 = att
-    ao.MaxTorque = 1e9
-    ao.Responsiveness = 200
-    ao.Parent = p
-
-    return { part = p, ap = ap, ao = ao, att = att }
+    return true
 end
 
-function Ring:build()
-    self:clear()
-    self:claimOwnership()
-
-    local found = self:collect()
-    self.hijacked = 0
-
-    for _, p in ipairs(found) do
-        local item = self:attach(p)
-        if item then
-            self.items[#self.items + 1] = item
-            self.hijacked = self.hijacked + 1
-        end
+function Ring:addPart(p)
+    if #self.parts >= self.maxParts then return end
+    if table.find(self.parts, p) then return end
+    if self:retain(p) then
+        self.parts[#self.parts + 1] = p
     end
-
-    -- 只有显式允许时才用本地方块兜底，否则宁可不显示
-    if #self.items == 0 then
-        if self.allowLocal then
-            local folder = Instance.new("Folder")
-            folder.Name = "LS_Ring"
-            folder.Parent = workspace
-            self.localFolder = folder
-
-            for i = 1, self.count do
-                local p = Instance.new("Part")
-                p.Size = Vector3.new(0.9, 0.9, 0.9)
-                p.Material = Enum.Material.Neon
-                p.Color = Color3.fromHSV((i - 1) / self.count, 0.65, 1)
-                p.Anchored = true
-                p.CanCollide = false
-                p.CanQuery = false
-                p.CanTouch = false
-                p.Parent = folder
-                self.items[#self.items + 1] = { part = p, localPart = true }
-            end
-        else
-            -- 静默：由心跳的 refresh 反复尝试，不在这里刷屏
-        end
-    end
-    return self.hijacked
 end
 
--- 剔掉已销毁/被移出场景的部件
-function Ring:prune()
-    local removed = false
-    for i = #self.items, 1, -1 do
-        local it = self.items[i]
-        local p = it.part
-        if not p or not p.Parent then
-            pcall(function()
-                if it.ap then it.ap:Destroy() end
-                if it.ao then it.ao:Destroy() end
-                if it.att then it.att:Destroy() end
-            end)
-            table.remove(self.items, i)
-            removed = true
-        end
-    end
-    if removed then self.hijacked = #self.items end
+function Ring:removePart(p)
+    local i = table.find(self.parts, p)
+    if i then table.remove(self.parts, i) end
 end
 
--- 自适应补吸：换图 / 部件被销毁后自动补齐到 count 个
-function Ring:refresh()
-    self:prune()
-    local need = self.count - #self.items
-    if need <= 0 then return end
-
-    local myRoot = Fly:root()
-    if not myRoot then return end
-
-    self:claimOwnership()
-
-    local have = {}
-    for _, it in ipairs(self.items) do have[it.part] = true end
-
-    for _, p in ipairs(self:collect()) do
-        if #self.items >= self.count then break end
-        if not have[p] then
-            local item = self:attach(p)
-            if item then
-                self.items[#self.items + 1] = item
-                have[p] = true
-            end
-        end
+function Ring:scan()
+    self.parts = {}
+    for _, d in ipairs(workspace:GetDescendants()) do
+        if #self.parts >= self.maxParts then break end
+        if self:retain(d) then self.parts[#self.parts + 1] = d end
     end
-    self.hijacked = #self.items
-end
-
-function Ring:clear()
-    for _, it in ipairs(self.items) do
-        pcall(function()
-            if it.ap then it.ap:Destroy() end
-            if it.ao then it.ao:Destroy() end
-            if it.att then it.att:Destroy() end
-        end)
-    end
-    self.items = {}
-    if self.localFolder then
-        pcall(function() self.localFolder:Destroy() end)
-        self.localFolder = nil
-    end
+    self.hits = #self.parts
 end
 
 function Ring:start()
     if self.on then return end
     self.on = true
-    self:build()
+    self:claimOwnership()
+    self:scan()
+
+    self.addedConn = workspace.DescendantAdded:Connect(function(d)
+        if self.on then self:addPart(d) end
+    end)
+    self.removedConn = workspace.DescendantRemoving:Connect(function(d)
+        if self.on then self:removePart(d) end
+    end)
 
     self.claimTick = 0
-    self.rescanTick = 0
     self.conn = RunService.Heartbeat:Connect(function(dt)
         if not self.on then return end
-        local myRoot = Fly:root()
-        if not myRoot then return end
+        local root = Fly:root()
+        if not root then return end
 
-        -- 所有权需要反复续，否则会被服务器收回
         self.claimTick = self.claimTick + dt
-        if self.claimTick > 1 then
+        if self.claimTick > 0.5 then
             self.claimTick = 0
             self:claimOwnership()
         end
 
-        -- 换图 / 部件被销毁 → 自动重新吸附
-        self.rescanTick = self.rescanTick + dt
-        if self.rescanTick > 1.2 then
-            self.rescanTick = 0
-            self:refresh()
-        end
-
-        self.t = self.t + dt * self.spin
-        local n = #self.items
-        for i, it in ipairs(self.items) do
-            local p = it.part
-            if p and p.Parent then
-                local a = self.t + (i - 1) * (math.pi * 2 / n)
-                local slot = myRoot.CFrame
-                    * CFrame.Angles(0, a, 0)
-                    * CFrame.new(0, math.sin(self.t * 2 + i) * 0.3, -self.radius)
-
-                if it.localPart then
-                    p.CFrame = slot
-                elseif it.ap then
-                    it.ap.Position = slot.Position
+        local center = root.Position
+        for _, part in ipairs(self.parts) do
+            if part and part.Parent and not part.Anchored then
+                local pos = part.Position
+                local flat = Vector3.new(pos.X, center.Y, pos.Z) - center
+                local dist = flat.Magnitude
+                if dist > 0.01 then
+                    local angle = math.atan2(pos.Z - center.Z, pos.X - center.X)
+                        + math.rad(self.rotationSpeed)
+                    local r = math.min(self.radius, math.max(dist, 2))
+                    local target = Vector3.new(
+                        center.X + math.cos(angle) * r,
+                        center.Y + self.height * math.abs(math.sin((pos.Y - center.Y) / math.max(self.height, 0.1))),
+                        center.Z + math.sin(angle) * r
+                    )
+                    local dir = target - pos
+                    if dir.Magnitude > 0.01 then
+                        pcall(function()
+                            part.Velocity = dir.Unit * self.attraction
+                        end)
+                    end
                 end
             end
         end
+        self.hits = #self.parts
     end)
 end
 
 function Ring:stop()
     self.on = false
     if self.conn then self.conn:Disconnect(); self.conn = nil end
-    self:clear()
+    if self.addedConn then self.addedConn:Disconnect(); self.addedConn = nil end
+    if self.removedConn then self.removedConn:Disconnect(); self.removedConn = nil end
 end
 
+function Ring:refresh()
+    if self.on then self:scan() end
+end
 function Ring:rebuild()
     if self.on then self:build() end
 end
@@ -807,38 +701,35 @@ tabTool:CreateSection("Parts 环绕")
 tabTool:CreateToggle("启用环绕", false, function(on)
     if on then
         Ring:start()
-        task.delay(0.4, function()
-            win:Notify("环绕", ("已吸附 %d 个部件"):format(Ring.hijacked), 3,
-                { Type = Ring.hijacked > 0 and "success" or "warning" })
+        task.delay(0.5, function()
+            win:Notify("环绕", ("已接管 %d 个部件"):format(Ring.hits), 3,
+                { Type = Ring.hits > 0 and "success" or "warning" })
         end)
     else
         Ring:stop()
     end
 end)
 
-tabTool:CreateToggle("无散件时用本地方块", false, function(on)
-    Ring.allowLocal = on
-    Ring:rebuild()
-end)
-
-tabTool:CreateSlider("扫描半径", 50, 800, 400, function(v)
-    Ring.scanRadius = v
-    Ring:refresh()
-end)
-
-tabTool:CreateSlider("方块数量", 4, 32, 12, function(v)
-    Ring.count = math.floor(v)
-    Ring:rebuild()
-end)
-
-tabTool:CreateSlider("环绕半径", 2, 15, 5, function(v)
+tabTool:CreateSlider("环绕半径", 2, 30, 8, function(v)
     Ring.radius = v
 end)
 
-tabTool:CreateSlider("旋转速度", 0, 8, 2, function(v)
-    Ring.spin = v
+tabTool:CreateSlider("环绕高度", 0, 20, 5, function(v)
+    Ring.height = v
 end)
 
+tabTool:CreateSlider("旋转速度", 0, 10, 2.5, function(v)
+    Ring.rotationSpeed = v
+end)
+
+tabTool:CreateSlider("吸附力度", 20, 500, 120, function(v)
+    Ring.attraction = v
+end)
+
+tabTool:CreateSlider("最大部件数", 10, 150, 60, function(v)
+    Ring.maxParts = math.floor(v)
+    Ring:refresh()
+end)
 tabTool:CreateParagraph(
     "Noclip 逐帧关闭自身碰撞，可穿过地形。\n" ..
     "甩飞依赖网络所有权，能否踢飞看对面所在服务器。", 2)
@@ -918,6 +809,13 @@ function LightScript:Shutdown()
 end
 
 if getgenv then getgenv().LightScript = LightScript end
+
+-- 暴露模块句柄，便于调试与外部调用
+LightScript.Fly = Fly
+LightScript.Ring = Ring
+LightScript.Noclip = Noclip
+LightScript.Speed = Speed
+LightScript.Fling = Fling
 
 win:SetIslandStatus("启动中")
 win:SetIslandDot(Theme.Success)
