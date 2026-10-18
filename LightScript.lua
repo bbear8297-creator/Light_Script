@@ -430,43 +430,117 @@ function Fling(radius, power)
 end
 
 -- ══════════════════════════════════════════════════════════
--- Parts Ring：环绕身边的一圈发光方块
+-- Parts 环绕（所有权劫持版）
+--   原理同 Super Ring Parts：
+--   1) sethiddenproperty(SimulationRadius, inf) 抢到附近部件的物理所有权
+--   2) 吸附地图上「未锚定、不属于角色」的部件
+--   3) 每个部件挂 AlignPosition，每帧把目标位置指到环形槽位
+--   → 因为是服务器已知的部件，其他人也能看见
 -- ══════════════════════════════════════════════════════════
 local Ring = {
-    on = false, count = 12, radius = 5, spin = 2,
-    folder = nil, conn = nil, parts = {}, t = 0,
+    on = false, count = 12, radius = 6, spin = 2, scanRadius = 120,
+    conn = nil, t = 0, items = {},
 }
+
+function Ring:claimOwnership()
+    pcall(function() sethiddenproperty(LP, "SimulationRadius", math.huge) end)
+    pcall(function() LP.ReplicationFocus = workspace end)
+end
+
+function Ring:collect()
+    local myRoot = Fly:root()
+    if not myRoot then return {} end
+    local out = {}
+    for _, d in ipairs(workspace:GetDescendants()) do
+        if #out >= self.count then break end
+        if d:IsA("BasePart") and not d.Anchored and d ~= myRoot then
+            local model = d:FindFirstAncestorOfClass("Model")
+            local isCharacter = model and model:FindFirstChildOfClass("Humanoid") ~= nil
+            if not isCharacter
+                and (d.Position - myRoot.Position).Magnitude <= self.scanRadius then
+                out[#out + 1] = d
+            end
+        end
+    end
+    return out
+end
+
+function Ring:attach(p)
+    pcall(function()
+        p.CanCollide = false
+        p.Massless = true
+    end)
+
+    local att = Instance.new("Attachment")
+    att.Name = "LS_RingAtt"
+    att.Parent = p
+
+    local ap = Instance.new("AlignPosition")
+    ap.Name = "LS_RingAlign"
+    ap.Mode = Enum.PositionAlignmentMode.OneAttachment
+    ap.Attachment0 = att
+    ap.MaxForce = 1e9
+    ap.MaxVelocity = math.huge
+    ap.Responsiveness = 200
+    ap.Position = p.Position
+    ap.Parent = p
+
+    local ao = Instance.new("AlignOrientation")
+    ao.Name = "LS_RingAlignO"
+    ao.Mode = Enum.OrientationAlignmentMode.OneAttachment
+    ao.Attachment0 = att
+    ao.MaxTorque = 1e9
+    ao.Responsiveness = 200
+    ao.Parent = p
+
+    return { part = p, ap = ap, ao = ao, att = att }
+end
 
 function Ring:build()
     self:clear()
-    self.folder = Instance.new("Folder")
-    self.folder.Name = "LS_Ring"
-    self.folder.Parent = workspace
+    self:claimOwnership()
 
-    for i = 1, self.count do
-        local p = Instance.new("Part")
-        p.Name = "LS_RingPart"
-        p.Size = Vector3.new(0.9, 0.9, 0.9)
-        p.Material = Enum.Material.Neon
-        p.Color = Color3.fromHSV((i - 1) / self.count, 0.65, 1)
-        p.Anchored = false          -- ★ 不锚定，交给物理
-        p.Massless = true           -- 不拖累角色
-        p.CanCollide = false
-        p.CanQuery = false
-        p.CanTouch = false
-        p.CastShadow = false
-        p.Parent = self.folder
-        self.parts[i] = p
+    for _, p in ipairs(self:collect()) do
+        local item = self:attach(p)
+        if item then self.items[#self.items + 1] = item end
     end
 
-    -- 不焊接：焊接会和每帧 CFrame 打架。改为每帧写位置 + 清速度，
-    -- 这样既保持环绕轨迹，又不会因重力往下掉。
+    -- 地图上没东西可吸时，退化成自己的方块（只有自己能看见）
+    if #self.items == 0 then
+        local myRoot = Fly:root()
+        local folder = Instance.new("Folder")
+        folder.Name = "LS_Ring"
+        folder.Parent = workspace
+        self.localFolder = folder
+
+        for i = 1, self.count do
+            local p = Instance.new("Part")
+            p.Size = Vector3.new(0.9, 0.9, 0.9)
+            p.Material = Enum.Material.Neon
+            p.Color = Color3.fromHSV((i - 1) / self.count, 0.65, 1)
+            p.Anchored = true
+            p.CanCollide = false
+            p.CanQuery = false
+            p.CanTouch = false
+            p.Parent = folder
+            self.items[#self.items + 1] = { part = p, localPart = true }
+        end
+    end
 end
 
 function Ring:clear()
-    self.parts = {}
-    if self.folder then pcall(function() self.folder:Destroy() end) end
-    self.folder = nil
+    for _, it in ipairs(self.items) do
+        pcall(function()
+            if it.ap then it.ap:Destroy() end
+            if it.ao then it.ao:Destroy() end
+            if it.att then it.att:Destroy() end
+        end)
+    end
+    self.items = {}
+    if self.localFolder then
+        pcall(function() self.localFolder:Destroy() end)
+        self.localFolder = nil
+    end
 end
 
 function Ring:start()
@@ -474,22 +548,34 @@ function Ring:start()
     self.on = true
     self:build()
 
+    self.claimTick = 0
     self.conn = RunService.Heartbeat:Connect(function(dt)
         if not self.on then return end
-        local char = LP.Character
-        local root = char and char:FindFirstChild("HumanoidRootPart")
-        if not root or not self.folder then return end
+        local myRoot = Fly:root()
+        if not myRoot then return end
+
+        -- 所有权需要反复续，否则会被服务器收回
+        self.claimTick = self.claimTick + dt
+        if self.claimTick > 1 then
+            self.claimTick = 0
+            self:claimOwnership()
+        end
 
         self.t = self.t + dt * self.spin
-        local n = #self.parts
-        for i, p in ipairs(self.parts) do
+        local n = #self.items
+        for i, it in ipairs(self.items) do
+            local p = it.part
             if p and p.Parent then
                 local a = self.t + (i - 1) * (math.pi * 2 / n)
-                local off = CFrame.Angles(0, a, 0) * CFrame.new(0, math.sin(self.t * 2 + i) * 0.25, -self.radius)
-                pcall(function()
-                    p.AssemblyLinearVelocity = Vector3.zero
-                    p.CFrame = root.CFrame * off
-                end)
+                local slot = myRoot.CFrame
+                    * CFrame.Angles(0, a, 0)
+                    * CFrame.new(0, math.sin(self.t * 2 + i) * 0.3, -self.radius)
+
+                if it.localPart then
+                    p.CFrame = slot
+                elseif it.ap then
+                    it.ap.Position = slot.Position
+                end
             end
         end
     end)
