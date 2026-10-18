@@ -261,7 +261,9 @@ end
 -- ══════════════════════════════════════════════════════════
 -- 4. 移动模块 · 飞行
 -- ══════════════════════════════════════════════════════════
-local Fly = { enabled = false, speed = 65, conn = nil, bv = nil }
+-- 手机端没有 WASD：用 Humanoid.MoveDirection（摇杆与键盘统一的"世界坐标输入"）
+-- 相机俯仰决定垂直分量，跳跃键短按给向上冲量。
+local Fly = { enabled = false, speed = 65, conn = nil, bv = nil, bg = nil, jumpConn = nil, upTicks = 0 }
 
 function Fly:root()
     local char = LP.Character
@@ -276,10 +278,12 @@ end
 function Fly:stop(silent)
     self.enabled = false
     if self.conn then self.conn:Disconnect(); self.conn = nil end
+    if self.jumpConn then self.jumpConn:Disconnect(); self.jumpConn = nil end
     if self.bv then pcall(function() self.bv:Destroy() end); self.bv = nil end
+    if self.bg then pcall(function() self.bg:Destroy() end); self.bg = nil end
+    self.upTicks = 0
     local hum = self:humanoid()
     if hum then
-        hum.PlatformStand = false
         pcall(function() hum:ChangeState(Enum.HumanoidStateType.GettingUp) end)
     end
     if not silent then win:SetIslandStatus("待机") end
@@ -294,44 +298,61 @@ function Fly:start()
     if self.enabled then return true end
 
     self.enabled = true
-    hum.PlatformStand = true
+    self.upTicks = 0
 
-    local bv = root:FindFirstChild("LS_Fly")
-    if not bv then
-        bv = Instance.new("BodyVelocity")
-        bv.Name = "LS_Fly"
-        bv.Parent = root
-    end
-    bv.MaxForce = Vector3.new(1e5, 1e5, 1e5)
-    bv.Velocity = Vector3.zero
+    -- 速度驱动
+    local bv = Instance.new("BodyVelocity")
+    bv.Name = "LS_Fly"
+    bv.MaxForce = Vector3.new(9e9, 9e9, 9e9)
+    bv.P = 1250
+    bv.Velocity = Vector3.new(0, 32, 0)     -- 起飞冲量
+    bv.Parent = root
     self.bv = bv
+
+    -- 姿态驱动：跟相机对齐，避免角色翻滚
+    local bg = Instance.new("BodyGyro")
+    bg.Name = "LS_FlyGyro"
+    bg.MaxTorque = Vector3.new(9e9, 9e9, 9e9)
+    bg.P = 3000
+    bg.D = 500
+    bg.CFrame = root.CFrame
+    bg.Parent = root
+    self.bg = bg
 
     self.conn = RunService.Heartbeat:Connect(function()
         if not self.enabled then return end
         local r = self:root()
         if not r then self:stop(true); return end
-        if not self.bv or not self.bv.Parent then
-            local nb = Instance.new("BodyVelocity")
-            nb.Name = "LS_Fly"
-            nb.MaxForce = Vector3.new(1e5, 1e5, 1e5)
-            nb.Parent = r
-            self.bv = nb
-        end
 
+        local h = self:humanoid()
+        local md = (h and h.MoveDirection) or Vector3.zero
         local cam = workspace.CurrentCamera
+
+        -- MoveDirection 永远是水平的世界坐标；用相机把它还原成 3D 方向，
+        -- 这样"抬头 + 前推"就自然爬升，"低头 + 前推"下降。
         local dir = Vector3.zero
         if cam then
-            local look, right = cam.CFrame.LookVector, cam.CFrame.RightVector
-            if UserInput:IsKeyDown(Enum.KeyCode.W) then dir += look end
-            if UserInput:IsKeyDown(Enum.KeyCode.S) then dir -= look end
-            if UserInput:IsKeyDown(Enum.KeyCode.D) then dir += right end
-            if UserInput:IsKeyDown(Enum.KeyCode.A) then dir -= right end
+            if md.Magnitude > 0.05 then
+                local rel = cam.CFrame:VectorToObjectSpace(md)
+                dir = cam.CFrame.LookVector * rel.Z + cam.CFrame.RightVector * rel.X
+            end
+            if self.bg then self.bg.CFrame = cam.CFrame end
+        else
+            dir = md
         end
-        if UserInput:IsKeyDown(Enum.KeyCode.Space) then dir += Vector3.yAxis end
-        if UserInput:IsKeyDown(Enum.KeyCode.LeftShift) then dir -= Vector3.yAxis end
 
-        if dir.Magnitude > 0 then dir = dir.Unit end
-        self.bv.Velocity = dir * self.speed
+        local vel = dir * self.speed
+        if self.upTicks > 0 then
+            vel = vel + Vector3.new(0, self.speed, 0)
+            self.upTicks = self.upTicks - 1
+        end
+
+        if self.bv then self.bv.Velocity = vel end
+    end)
+
+    -- 手机跳跃键 / PC 空格 → 上升脉冲
+    self.jumpConn = UserInput.JumpRequest:Connect(function()
+        if self.enabled then self.upTicks = 9 end
     end)
 
     win:SetIslandStatus("飞行中")
@@ -341,6 +362,8 @@ end
 function Fly:setSpeed(v)
     self.speed = v
 end
+
+LightScript.Fly = Fly          -- 暴露给外部/调试用
 
 LP.CharacterAdded:Connect(function()
     if Fly.enabled then
@@ -431,8 +454,8 @@ bindFly = tabMove:CreateKeybind("飞行开关", Enum.KeyCode.F, function()
 end)
 
 tabMove:CreateParagraph(
-    "开启后用 WASD 沿视角方向移动，空格上升、Shift 下降。\n" ..
-    "按键随时可改，改完立刻生效。", 2)
+    "手机：推摇杆飞，抬头就爬升、低头就下降，跳键短按上升。\n" ..
+    "电脑：WASD 飞，空格上升。速度滑条实时生效。", 2)
 
 -- ══════════════════════════════════════════════════════════
 -- 7. 设置页
