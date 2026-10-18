@@ -389,25 +389,44 @@ function Noclip:stop()
 end
 
 -- ══════════════════════════════════════════════════════════
--- Fling：给附近玩家的 Root 灌爆速度
+-- Fling（触碰式）：把自己送进目标身体里造成穿插，物理引擎会把对方弹飞
 -- ══════════════════════════════════════════════════════════
-function Fling(radius, power)
+local function nearestTarget(radius)
     local myRoot = Fly:root()
-    if not myRoot then return 0 end
-    local hit = 0
+    if not myRoot then return nil end
+    local best, bestD = nil, nil
     for _, plr in ipairs(Players:GetPlayers()) do
         if plr ~= LP and plr.Character then
             local r = plr.Character:FindFirstChild("HumanoidRootPart")
-            if r and (r.Position - myRoot.Position).Magnitude <= radius then
-                pcall(function()
-                    r.AssemblyLinearVelocity = Vector3.new(power, power, power)
-                    r.AssemblyAngularVelocity = Vector3.new(power, power, power)
-                end)
-                hit = hit + 1
+            if r then
+                local d = (r.Position - myRoot.Position).Magnitude
+                if d <= radius and (not bestD or d < bestD) then
+                    best, bestD = r, d
+                end
             end
         end
     end
-    return hit
+    return best
+end
+
+function Fling(radius, power)
+    local myRoot = Fly:root()
+    local target = nearestTarget(radius)
+    if not myRoot or not target then return 0 end
+
+    task.spawn(function()
+        for i = 1, 10 do
+            pcall(function()
+                myRoot.AssemblyLinearVelocity = Vector3.zero
+                myRoot.CFrame = target.CFrame * CFrame.new(0, 0.5, 0.4)
+            end)
+            task.wait(0.03)
+        end
+        pcall(function()
+            myRoot.AssemblyLinearVelocity = Vector3.new(0, power, 0)
+        end)
+    end)
+    return 1
 end
 
 -- ══════════════════════════════════════════════════════════
@@ -427,10 +446,11 @@ function Ring:build()
     for i = 1, self.count do
         local p = Instance.new("Part")
         p.Name = "LS_RingPart"
-        p.Size = Vector3.new(0.8, 0.8, 0.8)
+        p.Size = Vector3.new(0.9, 0.9, 0.9)
         p.Material = Enum.Material.Neon
         p.Color = Color3.fromHSV((i - 1) / self.count, 0.65, 1)
-        p.Anchored = true
+        p.Anchored = false          -- ★ 不锚定，交给物理
+        p.Massless = true           -- 不拖累角色
         p.CanCollide = false
         p.CanQuery = false
         p.CanTouch = false
@@ -438,6 +458,9 @@ function Ring:build()
         p.Parent = self.folder
         self.parts[i] = p
     end
+
+    -- 不焊接：焊接会和每帧 CFrame 打架。改为每帧写位置 + 清速度，
+    -- 这样既保持环绕轨迹，又不会因重力往下掉。
 end
 
 function Ring:clear()
@@ -463,7 +486,10 @@ function Ring:start()
             if p and p.Parent then
                 local a = self.t + (i - 1) * (math.pi * 2 / n)
                 local off = CFrame.Angles(0, a, 0) * CFrame.new(0, math.sin(self.t * 2 + i) * 0.25, -self.radius)
-                p.CFrame = root.CFrame * off
+                pcall(function()
+                    p.AssemblyLinearVelocity = Vector3.zero
+                    p.CFrame = root.CFrame * off
+                end)
             end
         end
     end)
