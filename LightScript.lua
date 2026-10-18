@@ -642,6 +642,80 @@ function Disaster:stop()
 end
 
 -- ══════════════════════════════════════════════════════════
+-- 投票助手（NDS 地图投票）
+--   投票 UI 是普通 TextButton，脚本点不到鼠标；
+--   但可以用 firesignal 直接触发它的 MouseButton1Click 连接。
+--   每轮投票阶段自动找带目标地图名的按钮并触发。
+-- ══════════════════════════════════════════════════════════
+local Vote = { on = false, target = "", conn = nil, lastAt = 0 }
+
+function Vote:collect()
+    local out = {}
+    local pg = LP:FindFirstChild("PlayerGui")
+    if not pg then return out end
+    for _, d in ipairs(pg:GetDescendants()) do
+        if d:IsA("TextButton") and d.Visible then
+            out[#out + 1] = d
+        end
+    end
+    return out
+end
+
+function Vote:labelOf(btn)
+    local txt = btn.Text
+    if (not txt or txt == "") and btn:FindFirstChildOfClass("TextLabel") then
+        txt = btn:FindFirstChildOfClass("TextLabel").Text
+    end
+    if (not txt or txt == "") and btn:FindFirstChildOfClass("ImageLabel") then
+        txt = btn.Name
+    end
+    return tostring(txt or btn.Name)
+end
+
+function Vote:cast(target)
+    target = tostring(target or "")
+    if target == "" then return false end
+    for _, btn in ipairs(self:collect()) do
+        local label = self:labelOf(btn)
+        if label:lower():find(target:lower(), 1, true) then
+            local ok = pcall(function() firesignal(btn.MouseButton1Click) end)
+            if ok then
+                win:Notify("投票", "已投：" .. label, 2, { Type = "success" })
+                return true
+            end
+        end
+    end
+    return false
+end
+
+function Vote:list()
+    local names = {}
+    for _, btn in ipairs(self:collect()) do
+        local l = self:labelOf(btn)
+        if #l > 0 and #l < 30 then names[#names + 1] = l end
+    end
+    return names
+end
+
+function Vote:start()
+    if self.on then return end
+    self.on = true
+    self.conn = task.spawn(function()
+        while self.on do
+            if self.target ~= "" then
+                pcall(function() self:cast(self.target) end)
+            end
+            task.wait(2)
+        end
+    end)
+end
+
+function Vote:stop()
+    self.on = false
+    if self.conn then pcall(function() task.cancel(self.conn) end); self.conn = nil end
+end
+
+-- ══════════════════════════════════════════════════════════
 -- Parts 环绕（所有权劫持版）
 --   原理同 Super Ring Parts：
 --   1) sethiddenproperty(SimulationRadius, inf) 抢到附近部件的物理所有权
@@ -989,6 +1063,48 @@ tabTool:CreateParagraph(
     "服务器随机挑选，客户端只能提前感知、不能预知。", 2)
 
 tabTool:CreateDivider()
+tabTool:CreateSection("地图投票")
+
+tabTool:CreateTextbox("目标地图", "输入地图名，如 Rooftop", "", function(text)
+    Vote.target = text
+end)
+
+tabTool:CreateButton("立刻投一票", function()
+    if not Vote:cast(Vote.target) then
+        win:Warning("投票", "没找到匹配按钮，先点「列出可投项」", 3)
+    end
+end)
+
+tabTool:CreateButton("列出可投项", function()
+    local names = Vote:list()
+    if #names == 0 then
+        win:Warning("投票", "PlayerGui 里没有可见按钮（可能不在投票阶段）", 3)
+        return
+    end
+    local shown = {}
+    for i = 1, math.min(6, #names) do shown[i] = names[i] end
+    win:Notify("可投项", table.concat(shown, " / "), 5, { Type = "info" })
+    print("[LightScript] 可投按钮:", table.concat(names, " | "))
+end)
+
+tabTool:CreateToggle("每轮自动投票", false, function(on)
+    if on then
+        if Vote.target == "" then
+            win:Warning("投票", "先填目标地图名", 3)
+            return
+        end
+        Vote:start()
+        win:Notify("投票", "已开启，每 2 秒尝试一次", 3, { Type = "success" })
+    else
+        Vote:stop()
+    end
+end)
+
+tabTool:CreateParagraph(
+    "用 firesignal 触发投票按钮点击，每 2 秒重试。\n" ..
+    "不确定按钮叫什么，先点「列出可投项」。", 2)
+
+tabTool:CreateDivider()
 tabTool:CreateSection("Parts 环绕")
 
 tabTool:CreateToggle("启用环绕", false, function(on)
@@ -1112,6 +1228,7 @@ LightScript.Fling = Fling
 LightScript.TouchFling = TouchFling
 LightScript.Spin = Spin
 LightScript.Disaster = Disaster
+LightScript.Vote = Vote
 
 win:SetIslandStatus("启动中")
 win:SetIslandDot(Theme.Success)
