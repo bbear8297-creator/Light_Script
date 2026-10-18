@@ -541,13 +541,16 @@ function Ring:start()
 
         for _, part in ipairs(self.parts) do
             if part and part.Parent and not part.Anchored then
-                -- ① 常驻推力：宣告所有权
-                pcall(function() part.Velocity = self.grabVelocity end)
-
-                -- ② 环形目标点 + 吸力覆盖
                 local pos = part.Position
                 local flat = Vector3.new(pos.X, center.Y, pos.Z) - center
                 local dist = flat.Magnitude
+
+                -- ① 只在远处灌常驻速度：抢所有权 + 拉进范围，近处不干扰环
+                if dist > self.radius * 2.5 then
+                    pcall(function() part.Velocity = self.grabVelocity end)
+                end
+
+                -- ② 弹簧模型：距离越近速度越小，到点自动收敛，不会过冲
                 if dist > 0.01 then
                     local angle = math.atan2(pos.Z - center.Z, pos.X - center.X)
                         + math.rad(self.rotationSpeed)
@@ -558,9 +561,12 @@ function Ring:start()
                         center.Z + math.sin(angle) * r
                     )
                     local dir = target - pos
-                    if dir.Magnitude > 0.01 then
+                    local gap = dir.Magnitude
+                    if gap > 0.05 then
+                        local speed = math.min(self.attraction, gap * 6)
                         pcall(function()
-                            part.Velocity = dir.Unit * self.attraction
+                            part.Velocity = dir.Unit * speed
+                            part.AssemblyAngularVelocity = Vector3.zero
                         end)
                     end
                 end
