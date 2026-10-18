@@ -221,6 +221,62 @@ if win.SetMainPosition then
 end
 
 -- ══════════════════════════════════════════════════════════
+-- 子项目加载器
+--   LightScript 是主体，负责建窗口；子项目被调用后把自己的 Tab 挂进来。
+--   约定：子项目不建灵动岛（Island = false），只往传入的 Window 加控件。
+-- ══════════════════════════════════════════════════════════
+local Projects = { loaded = {}, failed = {} }
+LightScript.Projects = Projects
+
+local PROJECT_LIST = {
+    { name = "Natural Disaster", file = "nds.lua",
+      url = "https://raw.githubusercontent.com/bbear8297-creator/Light_Script/main/projects/nds.lua" },
+}
+
+local function loadProjectSource(entry)
+    local ok, src = pcall(readfile, entry.file)
+    if ok and type(src) == "string" and #src > 50 then return src end
+    if type(request) == "function" then
+        local ok2, body = pcall(function()
+            return request({ Url = entry.url, Method = "GET" }).Body
+        end)
+        if ok2 and type(body) == "string" and #body > 50 then return body end
+    end
+end
+
+function LightScript:LoadProject(entry)
+    local src = loadProjectSource(entry)
+    if not src then
+        Projects.failed[entry.name] = "源码缺失"
+        return false, "源码缺失"
+    end
+
+    local chunk, cerr = loadstring(src, "=" .. entry.name)
+    if not chunk then
+        Projects.failed[entry.name] = tostring(cerr)
+        return false, tostring(cerr)
+    end
+
+    local ok, res = pcall(chunk, { Library = Library, Window = win, Project = entry.name })
+    if not ok then
+        Projects.failed[entry.name] = tostring(res)
+        return false, tostring(res)
+    end
+
+    Projects.loaded[entry.name] = res
+    return true
+end
+
+for _, entry in ipairs(PROJECT_LIST) do
+    local ok, err = LightScript:LoadProject(entry)
+    if ok then
+        print("[LightScript] 子项目已接入:", entry.name)
+    else
+        warn("[LightScript] 子项目加载失败:", entry.name, err)
+    end
+end
+
+-- ══════════════════════════════════════════════════════════
 -- 飞行：CFrame 位移 + 锚定去外力 + 禁用下坠状态
 -- ══════════════════════════════════════════════════════════
 local Fly = { enabled = false, speed = 65, conn = nil, jumpConn = nil, upTicks = 0 }
@@ -573,149 +629,6 @@ function TouchFling(radius)
 end
 
 -- ══════════════════════════════════════════════════════════
--- 灾害预警（Natural Disaster Survival）
---   服务器随机选灾害，客户端拿不到 RNG；
---   但灾害模型/预选值会先复制到客户端，抢在那一帧报告就等于提前知道。
---   两条路：① 监听 workspace 生成；② 轮询 StringValue 预选值
--- ══════════════════════════════════════════════════════════
-local Disaster = { on = false, conns = {}, last = nil, lastAt = 0, pollConn = nil }
-
-Disaster.Names = {
-    "Tornado", "Earthquake", "Flood", "Volcano", "Meteor Shower",
-    "Blizzard", "Sandstorm", "Thunderstorm", "Tsunami", "Fire",
-    "Acid Rain", "Flash Flood", "Rising Lava", "Deadly Virus",
-    "Space Rock", "Sand Storm", "Lightning", "Lava",
-}
-
-local function matchDisaster(name)
-    if type(name) ~= "string" or name == "" then return nil end
-    local lower = name:lower()
-    for _, d in ipairs(Disaster.Names) do
-        if lower:find(d:lower(), 1, true) then return d end
-    end
-    return nil
-end
-
-function Disaster:report(name)
-    if self.last == name and (tick() - self.lastAt) < 8 then return end
-    self.last = name
-    self.lastAt = tick()
-    win:Notify("灾害预警", name, 6, { Type = "warning" })
-    win:SetIslandStatus("灾害：" .. name)
-    pcall(function() win:SetIslandDot(Color3.fromRGB(255, 176, 32)) end)
-    print("[LightScript] 灾害预警:", name)
-end
-
-function Disaster:start()
-    if self.on then return end
-    self.on = true
-
-    table.insert(self.conns, workspace.DescendantAdded:Connect(function(d)
-        if not self.on then return end
-        local hit = matchDisaster(d.Name)
-        if hit then self:report(hit) end
-    end))
-
-    self.pollConn = task.spawn(function()
-        while self.on do
-            pcall(function()
-                for _, root in ipairs({ workspace, game:GetService("ReplicatedStorage") }) do
-                    for _, v in ipairs(root:GetDescendants()) do
-                        if v:IsA("StringValue") or v:IsA("ObjectValue") then
-                            local hit = matchDisaster(tostring(v.Value))
-                            if hit then self:report(hit) end
-                        end
-                    end
-                end
-            end)
-            task.wait(1.5)
-        end
-    end)
-end
-
-function Disaster:stop()
-    self.on = false
-    for _, c in ipairs(self.conns) do pcall(function() c:Disconnect() end) end
-    self.conns = {}
-    if self.pollConn then pcall(function() task.cancel(self.pollConn) end); self.pollConn = nil end
-    win:SetIslandStatus("待机")
-end
-
--- ══════════════════════════════════════════════════════════
--- 投票助手（NDS 地图投票）
---   投票 UI 是普通 TextButton，脚本点不到鼠标；
---   但可以用 firesignal 直接触发它的 MouseButton1Click 连接。
---   每轮投票阶段自动找带目标地图名的按钮并触发。
--- ══════════════════════════════════════════════════════════
-local Vote = { on = false, target = "", conn = nil, lastAt = 0 }
-
-function Vote:collect()
-    local out = {}
-    local pg = LP:FindFirstChild("PlayerGui")
-    if not pg then return out end
-    for _, d in ipairs(pg:GetDescendants()) do
-        if d:IsA("TextButton") and d.Visible then
-            out[#out + 1] = d
-        end
-    end
-    return out
-end
-
-function Vote:labelOf(btn)
-    local txt = btn.Text
-    if (not txt or txt == "") and btn:FindFirstChildOfClass("TextLabel") then
-        txt = btn:FindFirstChildOfClass("TextLabel").Text
-    end
-    if (not txt or txt == "") and btn:FindFirstChildOfClass("ImageLabel") then
-        txt = btn.Name
-    end
-    return tostring(txt or btn.Name)
-end
-
-function Vote:cast(target)
-    target = tostring(target or "")
-    if target == "" then return false end
-    for _, btn in ipairs(self:collect()) do
-        local label = self:labelOf(btn)
-        if label:lower():find(target:lower(), 1, true) then
-            local ok = pcall(function() firesignal(btn.MouseButton1Click) end)
-            if ok then
-                win:Notify("投票", "已投：" .. label, 2, { Type = "success" })
-                return true
-            end
-        end
-    end
-    return false
-end
-
-function Vote:list()
-    local names = {}
-    for _, btn in ipairs(self:collect()) do
-        local l = self:labelOf(btn)
-        if #l > 0 and #l < 30 then names[#names + 1] = l end
-    end
-    return names
-end
-
-function Vote:start()
-    if self.on then return end
-    self.on = true
-    self.conn = task.spawn(function()
-        while self.on do
-            if self.target ~= "" then
-                pcall(function() self:cast(self.target) end)
-            end
-            task.wait(2)
-        end
-    end)
-end
-
-function Vote:stop()
-    self.on = false
-    if self.conn then pcall(function() task.cancel(self.conn) end); self.conn = nil end
-end
-
--- ══════════════════════════════════════════════════════════
 -- Parts 环绕（所有权劫持版）
 --   原理同 Super Ring Parts：
 --   1) sethiddenproperty(SimulationRadius, inf) 抢到附近部件的物理所有权
@@ -1045,64 +958,6 @@ end)
 tabTool:CreateParagraph(
     "生成高速部件贴到目标身上并强制触发 Touch。\n" ..
     "纯客户端能做到的最后一种方式，成不成看服务端。", 2)
-
-tabTool:CreateDivider()
-tabTool:CreateSection("灾害预警（NDS）")
-
-tabTool:CreateToggle("启用灾害预警", false, function(on)
-    if on then
-        Disaster:start()
-        win:Notify("灾害预警", "已开始监听，灾害一出现就提示", 3, { Type = "success" })
-    else
-        Disaster:stop()
-    end
-end)
-
-tabTool:CreateParagraph(
-    "监听 workspace 生成 + 预选值轮询，抢在警报前报出灾害名。\n" ..
-    "服务器随机挑选，客户端只能提前感知、不能预知。", 2)
-
-tabTool:CreateDivider()
-tabTool:CreateSection("地图投票")
-
-tabTool:CreateTextbox("目标地图", "输入地图名，如 Rooftop", "", function(text)
-    Vote.target = text
-end)
-
-tabTool:CreateButton("立刻投一票", function()
-    if not Vote:cast(Vote.target) then
-        win:Warning("投票", "没找到匹配按钮，先点「列出可投项」", 3)
-    end
-end)
-
-tabTool:CreateButton("列出可投项", function()
-    local names = Vote:list()
-    if #names == 0 then
-        win:Warning("投票", "PlayerGui 里没有可见按钮（可能不在投票阶段）", 3)
-        return
-    end
-    local shown = {}
-    for i = 1, math.min(6, #names) do shown[i] = names[i] end
-    win:Notify("可投项", table.concat(shown, " / "), 5, { Type = "info" })
-    print("[LightScript] 可投按钮:", table.concat(names, " | "))
-end)
-
-tabTool:CreateToggle("每轮自动投票", false, function(on)
-    if on then
-        if Vote.target == "" then
-            win:Warning("投票", "先填目标地图名", 3)
-            return
-        end
-        Vote:start()
-        win:Notify("投票", "已开启，每 2 秒尝试一次", 3, { Type = "success" })
-    else
-        Vote:stop()
-    end
-end)
-
-tabTool:CreateParagraph(
-    "用 firesignal 触发投票按钮点击，每 2 秒重试。\n" ..
-    "不确定按钮叫什么，先点「列出可投项」。", 2)
 
 tabTool:CreateDivider()
 tabTool:CreateSection("Parts 环绕")

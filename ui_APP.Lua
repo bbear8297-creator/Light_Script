@@ -984,19 +984,23 @@ function Library:CreateWindow(options)
         if isMainOpen then hideMain() else showMain() end
     end
 
-    Island = CreateDynamicIsland(ScreenGui, Theme, {
-        OnClick = function() toggleMain() end,
-    })
+    -- ★ Island = false：子项目嵌入主窗口时不要灵动岛
+    local islandUnsub
+    if options.Island ~= false then
+        Island = CreateDynamicIsland(ScreenGui, Theme, {
+            OnClick = function() toggleMain() end,
+        })
 
-    local islandUnsub = FeatureCounter.Subscribe(function(count)
-        if count == 0 then
-            Island.SetStatus("待机")
-            Island.SetStatusDot(Theme.HintText)
-        else
-            Island.SetStatus("运行中 · " .. count)
-            Island.SetStatusDot(Theme.Success)
-        end
-    end)
+        islandUnsub = FeatureCounter.Subscribe(function(count)
+            if count == 0 then
+                Island.SetStatus("待机")
+                Island.SetStatusDot(Theme.HintText)
+            else
+                Island.SetStatus("运行中 · " .. count)
+                Island.SetStatusDot(Theme.Success)
+            end
+        end)
+    end
 
     -- CanvasGroup：整窗透明度可一次性做渐显（Frame 做不到）
     MainFrame = Instance.new("CanvasGroup")
@@ -1324,10 +1328,10 @@ function Library:CreateWindow(options)
     end
 
     function Window:GetIsland() return Island end
-    function Window:SetIslandStatus(t) Island.SetStatus(t) end
-    function Window:SetIslandTitle(t) Island.SetStatus(t) end
-    function Window:SetIslandDot(c) Island.SetStatusDot(c) end
-    function Window:SetIslandAvatar(i) Island.SetAvatar(i) end
+    function Window:SetIslandStatus(t) if Island then Island.SetStatus(t) end end
+    function Window:SetIslandTitle(t) if Island then Island.SetStatus(t) end end
+    function Window:SetIslandDot(c) if Island then Island.SetStatusDot(c) end end
+    function Window:SetIslandAvatar(i) if Island then Island.SetAvatar(i) end end
 
     function Window:RegisterFeature(n) return FeatureCounter.Register(n) end
     function Window:SetFeatureActive(id, a) FeatureCounter.SetActive(id, a) end
