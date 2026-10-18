@@ -600,7 +600,7 @@ local Ring = {
     rotationSpeed = 10,
     attraction = 1000,
     grabVelocity = Vector3.new(14.46262424, 14.46262424, 14.46262424),
-    maxParts = 200,
+    maxParts = 2000,
     scanRadius = 99999,     -- 99999 = 不过滤
     conn = nil, addedConn = nil, removedConn = nil,
     parts = {}, hits = 0,
@@ -615,12 +615,22 @@ function Ring:retain(p)
     if not p:IsA("BasePart") then return false end
     if p.Anchored then return false end
     if not p:IsDescendantOf(workspace) then return false end
+
+    -- 原版只看「直接父级」有没有 Humanoid / Head，不用祖先判定
+    local parent = p.Parent
+    if parent then
+        if parent:FindFirstChildOfClass("Humanoid") then return false end
+        if parent:FindFirstChild("Head") then return false end
+    end
+
     local char = LP.Character
     if char and p:IsDescendantOf(char) then return false end
+
+    -- 质量归零是推动大件的关键；两个属性分开 pcall，避免一个失败拖累另一个
     pcall(function()
         p.CustomPhysicalProperties = PhysicalProperties.new(0, 0, 0, 0, 0)
-        p.CanCollide = false
     end)
+    pcall(function() p.CanCollide = false end)
     return true
 end
 
@@ -924,7 +934,7 @@ tabTool:CreateSlider("吸附力度", 100, 3000, 1000, function(v)
     Ring.attraction = v
 end)
 
-tabTool:CreateSlider("最大部件数", 10, 400, 200, function(v)
+tabTool:CreateSlider("最大部件数", 50, 2000, 2000, function(v)
     Ring.maxParts = math.floor(v)
     Ring:refresh()
 end)
