@@ -838,6 +838,14 @@ function Library:CreateWindow(options)
     local pendingNotifs = {}
     local notifPumpConn
 
+    -- ★ 墙钟时间：os.clock() 是 CPU 时间，App 切到后台就不走了，
+    --   通知会永远停在"到期前"。DateTime 是真实时间，后台回来能立刻过期。
+    local function nowSec()
+        local ok, ms = pcall(function() return DateTime.now().UnixTimestampMillis end)
+        if ok and type(ms) == "number" then return ms / 1000 end
+        return os.clock()
+    end
+
     local function dismissNotif(entry)
         if entry.dying then return end
         entry.dying = true
@@ -847,13 +855,17 @@ function Library:CreateWindow(options)
                 { Position = UDim2.new(1, 40, 0, 0) }):Play()
             TweenService:Create(entry.scale, TweenInfo.new(0.25), { Scale = 0.85 }):Play()
         end)
-        entry.killAt = os.clock() + 0.35
+        entry.killAt = nowSec() + 0.35
     end
 
     local function notifPump()
-        local now = os.clock()
+        local now = nowSec()
+
+        -- 队列内正常回收
+        local queued = {}
         for i = #pendingNotifs, 1, -1 do
             local e = pendingNotifs[i]
+            queued[e.frame] = true
             if not e.frame or not e.frame.Parent then
                 table.remove(pendingNotifs, i)
             elseif not e.dying then
@@ -863,21 +875,54 @@ function Library:CreateWindow(options)
                 table.remove(pendingNotifs, i)
             end
         end
-        if #pendingNotifs == 0 and notifPumpConn then
+
+        -- ★ 兜底：容器里存在、但队列里没有的孤儿卡片（创建过程中抛错逃逸的）
+        local alive = 0
+        for _, child in ipairs(NotifContainer:GetChildren()) do
+            if child.Name == "LS_Notif" then
+                alive = alive + 1
+                if not queued[child] then
+                    local born = child:GetAttribute("ls_born")
+                    if type(born) ~= "number" or now - born > 8 then
+                        pcall(function() child:Destroy() end)
+                        alive = alive - 1
+                    end
+                end
+            end
+        end
+
+        -- 队列空且容器空才停泵
+        if #pendingNotifs == 0 and alive <= 0 and notifPumpConn then
             notifPumpConn:Disconnect()
             notifPumpConn = nil
         end
     end
 
+    -- 一旦有卡片落地就开泵：即使后续创建过程抛错，也能被兜底扫描清掉
+    local function ensureNotifPump()
+        if notifPumpConn then return end
+        notifPumpConn = track(RunService.Heartbeat:Connect(notifPump))
+    end
+
     local MainFrame, MainScale, Island
     local isMainOpen, isMainAnimating = false, false
     local destroyed = false
+    local introPlayed = false
+    local playIntro                     -- 前向声明：Tab 建完才知道有哪些控件
 
     local function showMain()
-        if destroyed then return end              -- ★ 已销毁就不再复活动画
+        if destroyed then return end
         if isMainOpen or isMainAnimating then return end
         isMainOpen, isMainAnimating = true, true
         MainFrame.Visible = true
+
+        -- ★ 首次打开走开场动画（可用 CreateWindow{ Intro = false } 关闭）
+        if not introPlayed and options.Intro ~= false and playIntro then
+            introPlayed = true
+            playIntro()
+            return
+        end
+
         MainScale.Scale = 0
         local t = TweenService:Create(MainScale,
             TweenInfo.new(0.45, Enum.EasingStyle.Back, Enum.EasingDirection.Out),
@@ -1088,16 +1133,20 @@ function Library:CreateWindow(options)
 
     local function pushNotification(title, message, duration, opts)
         title, message, duration = title or "通知", message or "", duration or 4
+        duration = tonumber(duration) or 4      -- ★ 防止字符串 duration 让 os.clock() 相加报错
         opts = opts or {}
         local kind = opts.Type or "info"
 
         notifOrder = notifOrder + 1
         local notif = Instance.new("Frame")
+        notif.Name = "LS_Notif"          -- 便于调试计数 / 兜底扫描
+        pcall(function() notif:SetAttribute("ls_born", nowSec()) end)
         notif.Size = UDim2.new(1, 0, 0, 70)
         notif.ZIndex = 401
         notif.LayoutOrder = notifOrder
         notif.ClipsDescendants = true
         notif.Parent = NotifContainer
+        ensureNotifPump()                -- ★ 先开泵，防后续出错留下孤儿卡片
         Glass.Apply(notif, { Level = "Panel", Radius = 16 })
 
         -- ★ 修复：UIListLayout 会接管子物体 Position，直接对 notif 补间 Position 无效。
@@ -1171,12 +1220,10 @@ function Library:CreateWindow(options)
             frame = notif,
             body = body,
             scale = sc,
-            expire = os.clock() + duration,
+            expire = nowSec() + duration,
             dying = false,
         }
-        if not notifPumpConn then
-            notifPumpConn = track(RunService.Heartbeat:Connect(notifPump))
-        end
+        ensureNotifPump()
 
         return notif
     end
@@ -1215,7 +1262,18 @@ function Library:CreateWindow(options)
         end
         return pushNotification(title, message, duration, opts)
     end
-    function Window:Toast(m, d) return pushNotification("提示", m, d or 2.5, { Type = "info" }) end
+    -- Toast 兼容两种写法：
+    --   Toast("内容", 3)             → 标题固定"提示"
+    --   Toast("标题", "内容", 3)      → 旧版 demo 的三参数写法
+    function Window:Toast(a, b, c)
+        local title, msg, dur
+        if type(b) == "string" and type(c) == "number" then
+            title, msg, dur = a, b, c
+        else
+            title, msg, dur = "提示", a, b
+        end
+        return pushNotification(tostring(title), tostring(msg), tonumber(dur) or 2.5, { Type = "info" })
+    end
     function Window:Success(t, m, d) return pushNotification(t, m, d or 3, { Type = "success" }) end
     function Window:Warning(t, m, d) return pushNotification(t, m, d or 3, { Type = "warning" }) end
     function Window:Error(t, m, d) return pushNotification(t, m, d or 4, { Type = "error" }) end
@@ -1357,7 +1415,7 @@ function Library:CreateWindow(options)
         end)
 
         local function setSelected(v) isSelected = v; apply(Theme) end
-        table.insert(Tabs, { Button = TabButton, Page = TabPage, setSelected = setSelected })
+        table.insert(Tabs, { Button = TabButton, Page = TabPage, Scale = tbScale, setSelected = setSelected })
 
         if firstTab then
             firstTab = false
@@ -2620,6 +2678,123 @@ function Library:CreateWindow(options)
         end
 
         return Elements
+    end
+
+    ------------------------------------------------------------------
+    -- 开场动画
+    --   时间线：压暗层 → 窗口旋入 → Tab 逐个弹起 → 内容浮现 → 灵动岛脉冲
+    --   用 Heartbeat 时间线驱动（不用 task.delay，部分执行器上不触发）
+    ------------------------------------------------------------------
+    local introConn
+
+    function playIntro()
+        local basePos = MainFrame.Position
+        local baseRot = MainFrame.Rotation
+
+        -- 压暗层
+        local dim = Instance.new("Frame")
+        dim.Name = "LS_IntroDim"
+        dim.Size = UDim2.new(1, 0, 1, 0)
+        dim.BackgroundColor3 = Color3.fromRGB(7, 7, 10)
+        dim.BackgroundTransparency = 0.12
+        dim.BorderSizePixel = 0
+        dim.ZIndex = 950
+        dim.Parent = ScreenGui
+
+        -- 起始态：下沉 56px、-4°、缩到 0.86
+        MainFrame.Position = UDim2.new(basePos.X.Scale, basePos.X.Offset,
+            basePos.Y.Scale, basePos.Y.Offset + 56)
+        MainFrame.Rotation = baseRot - 4
+        MainScale.Scale = 0.86
+
+        -- Tab 起始态（UIScale 做，UIListLayout 会顶掉 Position）
+        for _, d in ipairs(Tabs) do
+            if d.Scale then d.Scale.Scale = 0.72 end
+        end
+
+        -- 内容区起始态
+        local contentScale = ContentContainer:FindFirstChildOfClass("UIScale")
+        if not contentScale then
+            contentScale = Instance.new("UIScale")
+            contentScale.Parent = ContentContainer
+        end
+        contentScale.Scale = 0.94
+
+        blurCtrl.SetOn(true)
+
+        local timeline = {}
+        local function at(t, fn) timeline[#timeline + 1] = { t = t, fn = fn } end
+
+        at(0.00, function()
+            TweenService:Create(dim, TweenInfo.new(0.50, Enum.EasingStyle.Quad),
+                { BackgroundTransparency = 1 }):Play()
+            TweenService:Create(MainFrame,
+                TweenInfo.new(0.62, Enum.EasingStyle.Quint, Enum.EasingDirection.Out),
+                { Position = basePos, Rotation = baseRot }):Play()
+            TweenService:Create(MainScale,
+                TweenInfo.new(0.62, Enum.EasingStyle.Back, Enum.EasingDirection.Out),
+                { Scale = 1 }):Play()
+        end)
+
+        for i, d in ipairs(Tabs) do
+            at(0.10 + (i - 1) * 0.045, function()
+                if d.Scale then
+                    TweenService:Create(d.Scale,
+                        TweenInfo.new(0.34, Enum.EasingStyle.Back, Enum.EasingDirection.Out),
+                        { Scale = 1 }):Play()
+                end
+            end)
+        end
+
+        local contentAt = 0.10 + #Tabs * 0.045 + 0.06
+        at(contentAt, function()
+            TweenService:Create(contentScale,
+                TweenInfo.new(0.45, Enum.EasingStyle.Quart, Enum.EasingDirection.Out),
+                { Scale = 1 }):Play()
+        end)
+
+        at(0.16, function()
+            if Island and Island.Frame then
+                local s = Island.Frame:FindFirstChildOfClass("UIScale")
+                if s then
+                    s.Scale = 1.18
+                    TweenService:Create(s,
+                        TweenInfo.new(0.50, Enum.EasingStyle.Back, Enum.EasingDirection.Out),
+                        { Scale = 1 }):Play()
+                end
+            end
+        end)
+
+        local total = contentAt + 0.55
+        at(total, function()
+            pcall(function() dim:Destroy() end)
+            isMainAnimating = false
+        end)
+
+        if introConn then introConn:Disconnect(); introConn = nil end
+        local started = os.clock()
+        local idx = 1
+        introConn = RunService.Heartbeat:Connect(function()
+            local elapsed = os.clock() - started
+            while idx <= #timeline and elapsed >= timeline[idx].t do
+                local step = timeline[idx]
+                idx = idx + 1
+                pcall(step.fn)
+            end
+            if idx > #timeline then
+                if introConn then introConn:Disconnect(); introConn = nil end
+            end
+        end)
+        track(introConn)
+    end
+
+    function Window:PlayIntro()
+        if destroyed then return end
+        introPlayed = true
+        isMainAnimating = true
+        MainFrame.Visible = true
+        isMainOpen = true
+        playIntro()
     end
 
     -- X 按钮的实际行为（Window 表已就绪）

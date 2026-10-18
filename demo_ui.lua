@@ -158,7 +158,7 @@ tabCombat:CreateSection("基础开关")
 local toggleAim = guard("Toggle", function()
     return tabCombat:CreateToggle("瞄准辅助", false, function(on)
         win:SetIslandStatus(on and "战斗 · 瞄准开启" or "待机")
-        win:Toast("瞄准辅助", on and "已开启" or "已关闭", 2)
+        win:Notify("瞄准辅助", on and "已开启" or "已关闭", 2)
     end)
 end)
 
@@ -183,7 +183,7 @@ tabCombat:CreateSection("下拉与按键")
 
 local dropMode = guard("Dropdown", function()
     return tabCombat:CreateDropdown("瞄准部位", { "头部", "躯干", "最近部位", "随机" }, "头部",
-        function(opt) win:Toast("瞄准部位", "切换为 " .. tostring(opt), 2) end)
+        function(opt) win:Notify("瞄准部位", "切换为 " .. tostring(opt), 2) end)
 end)
 
 local bindToggle = guard("Keybind", function()
@@ -218,7 +218,7 @@ end)
 guard("Textbox", function()
     return tabVisual:CreateTextbox("自定义标签", "输入点什么…", "Light Script", function(text)
         callMethod(lblPreview, "SetText", "预览：" .. tostring(text))
-        win:Toast("文本框", text, 2)
+        win:Notify("文本框", text, 2)
     end)
 end)
 
@@ -229,7 +229,7 @@ guard("Dropdown", function()
     return tabSetting:CreateDropdown("主题预设",
         { "DeepSpace", "Nebula", "Aurora", "Ember" }, "Nebula", function(name)
             win:ApplyTheme(name)
-            win:Toast("主题", "已切换 " .. tostring(name), 2)
+            win:Notify("主题", "已切换 " .. tostring(name), 2)
         end)
 end)
 
@@ -237,7 +237,7 @@ tabSetting:CreateSection("生命周期")
 
 guard("Button", function()
     return tabSetting:CreateButton("弹出四种通知", function()
-        win:Toast("提示", "这是一条普通 Toast")
+        win:Notify("提示", "这是一条普通 Toast")
         task.delay(0.4, function() win:Success("成功", "操作已完成") end)
         task.delay(0.8, function() win:Warning("警告", "检测到异常数值") end)
         task.delay(1.2, function() win:Error("错误", "模拟一次失败回调") end)
@@ -248,14 +248,14 @@ guard("Button", function()
     return tabSetting:CreateButton("切换 X 按钮行为（隐藏 ↔ 销毁）", function()
         local nextMode = (win:GetCloseAction() == "destroy") and "hide" or "destroy"
         win:SetCloseAction(nextMode)
-        win:Toast("X 按钮", nextMode == "destroy" and "现在点 X 会直接销毁窗口"
+        win:Notify("X 按钮", nextMode == "destroy" and "现在点 X 会直接销毁窗口"
             or "现在点 X 只隐藏，点灵动岛可展开", 3)
     end)
 end)
 
 guard("Button", function()
     return tabSetting:CreateButton("销毁全部窗口（测 DestroyAll）", function()
-        win:Toast("即将销毁", "3 秒后执行 Library:DestroyAll()", 2)
+        win:Notify("即将销毁", "3 秒后执行 Library:DestroyAll()", 2)
         task.delay(3, function()
             Library:DestroyAll()
             print("[demo] DestroyAll 已执行，剩余窗口:", #Library:GetWindows())
