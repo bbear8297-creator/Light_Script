@@ -524,6 +524,55 @@ function Spin:stop()
 end
 
 -- ══════════════════════════════════════════════════════════
+-- 配件甩飞（触碰强制）
+--   思路：把一块带巨大速度的部件挂到目标身上，并用 firetouchinterest
+--   强制触发 Touch 事件，让服务器的物理去处理这次碰撞。
+--   这是纯客户端能做到的最后一招。
+-- ══════════════════════════════════════════════════════════
+function TouchFling(radius)
+    local char = LP.Character
+    local root = char and char:FindFirstChild("HumanoidRootPart")
+    local target = nearestTarget(radius or 30)
+    if not (char and root and target) then return 0 end
+
+    local p = Instance.new("Part")
+    p.Name = "LS_FlingPart"
+    p.Size = Vector3.new(4, 4, 4)
+    p.Transparency = 1
+    p.CanCollide = true
+    p.CanQuery = false
+    p.Massless = true
+    p.CFrame = target.CFrame
+    p.Parent = workspace
+
+    pcall(function()
+        p.AssemblyLinearVelocity = Vector3.new(1e6, 1e6, 1e6)
+        p.AssemblyAngularVelocity = Vector3.new(1e6, 1e6, 1e6)
+    end)
+
+    -- 双向强制触碰
+    pcall(function() firetouchinterest(p, target, 0) end)
+    pcall(function() firetouchinterest(p, target, 1) end)
+    pcall(function() firetouchinterest(root, target, 0) end)
+    pcall(function() firetouchinterest(root, target, 1) end)
+
+    -- 连续几帧贴上去
+    task.spawn(function()
+        for i = 1, 12 do
+            if not p.Parent or not target.Parent then break end
+            pcall(function()
+                p.CFrame = target.CFrame * CFrame.new(0, 0, 2)
+                firetouchinterest(p, target, 0)
+            end)
+            task.wait(0.03)
+        end
+        pcall(function() p:Destroy() end)
+    end)
+
+    return 1
+end
+
+-- ══════════════════════════════════════════════════════════
 -- Parts 环绕（所有权劫持版）
 --   原理同 Super Ring Parts：
 --   1) sethiddenproperty(SimulationRadius, inf) 抢到附近部件的物理所有权
@@ -951,7 +1000,7 @@ LightScript.Fly = Fly
 LightScript.Ring = Ring
 LightScript.Noclip = Noclip
 LightScript.Speed = Speed
-LightScript.Fling = Fling
+LightScript.Fling = Fling`nLightScript.TouchFling = TouchFling
 LightScript.Spin = Spin
 
 win:SetIslandStatus("启动中")
