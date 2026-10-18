@@ -787,7 +787,7 @@ function Library:CreateWindow(options)
     ScreenGui.ResetOnSpawn = false
     ScreenGui.ZIndexBehavior = Enum.ZIndexBehavior.Sibling
     ScreenGui.IgnoreGuiInset = false
-    ScreenGui.DisplayOrder = 999999
+    ScreenGui.DisplayOrder = 2147483647
     ScreenGui.Parent = targetGui
 
     local globalConns = {}
@@ -2039,6 +2039,18 @@ function Library:CreateWindow(options)
                 end,
                 Get = function() return selected end,
                 GetOptions = function() return options end,
+                SetOptions = function(list)
+                    for i = #options, 1, -1 do options[i] = nil end
+                    for i, v in ipairs(list or {}) do options[i] = v end
+                    if #options == 0 then
+                        selected = ""
+                        dropBtn.Text = "无选项"
+                    elseif not table.find(options, selected) then
+                        selected = options[1]
+                        dropBtn.Text = selected
+                    end
+                    return #options
+                end,
             })
         end
 

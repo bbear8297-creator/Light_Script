@@ -475,7 +475,79 @@ local function nearestTarget(radius)
 end
 
 -- ══════════════════════════════════════════════════════════
--- Fling：SkidFling（原作 zqyDSUWX，KILASIK 的 Multi-Fling 用的就是这套）
+-- 防甩飞 / 位置锁
+--   思路：不跟物理对抗，而是每帧检查自己在不在「该在的位置」。
+--   被甩飞时速度会瞬间飙到几百上千，位置也会瞬移；
+--   检测到就清速度 + 拉回锚点，等于把甩飞效果按住。
+-- ══════════════════════════════════════════════════════════
+local SelfLock = {
+    on = false, conn = nil, anchorCF = nil,
+    velThreshold = 90,     -- 速度阈值，超过认为被甩
+    distThreshold = 12,    -- 偏离锚点距离阈值
+    holdUntil = 0,         -- 强制锁定到期时间
+}
+
+function SelfLock:bind(char, root)
+    self.char = char
+    self.root = root
+end
+
+function SelfLock:snap()
+    local root = self.root
+    if not root or not root.Parent then return end
+    pcall(function()
+        root.AssemblyLinearVelocity = Vector3.zero
+        root.AssemblyAngularVelocity = Vector3.zero
+        if self.anchorCF then root.CFrame = self.anchorCF end
+    end)
+end
+
+function SelfLock:start()
+    if self.on then return end
+    local char = LP.Character
+    local root = char and char:FindFirstChild("HumanoidRootPart")
+    if not root then return end
+    self:bind(char, root)
+    self.anchorCF = root.CFrame
+    self.on = true
+
+    self.conn = RunService.Heartbeat:Connect(function()
+        if not self.on then return end
+        local r = self.root
+        if not r or not r.Parent then
+            local c = LP.Character
+            r = c and c:FindFirstChild("HumanoidRootPart")
+            if not r then return end
+            self:bind(c, r)
+            self.anchorCF = r.CFrame
+            return
+        end
+
+        local vel = r.AssemblyLinearVelocity.Magnitude
+        local ang = r.AssemblyAngularVelocity.Magnitude
+        local drift = self.anchorCF and (r.Position - self.anchorCF.Position).Magnitude or 0
+
+        if tick() < self.holdUntil or (vel > self.velThreshold or ang > 40 or drift > self.distThreshold) then
+            self:snap()
+        else
+            self.anchorCF = r.CFrame
+        end
+    end)
+end
+
+function SelfLock:stop()
+    self.on = false
+    if self.conn then self.conn:Disconnect(); self.conn = nil end
+end
+
+-- 甩飞期间用的临时硬锁：duration 秒内每帧把身体拽回 anchorCF
+function SelfLock:holdFor(anchorCF, duration)
+    self.anchorCF = anchorCF
+    self.holdUntil = tick() + (duration or 0)
+end
+
+-- ══════════════════════════════════════════════════════════
+-- Fling：SkidFling（原作 zqyDSUWX）
 --   本质：把自己 CFrame 塞进目标身体里，配上天文级速度/角速度疯狂旋转，
 --         物理求解器会把目标直接弹飞。
 --   三个前置缺一不可：
@@ -523,6 +595,9 @@ function Fling(radius, duration)
                 root.RotVelocity = Vector3.new(9e8, 9e8, 9e8)
             end)
             task.wait()
+
+            -- 关键：只让"重叠"发生在一帧内，立刻把自己钉回去
+            if SelfLock.on then SelfLock:snap() end
         end
 
         pcall(function() bv:Destroy() end)
@@ -534,8 +609,14 @@ function Fling(radius, duration)
             root.CFrame = savedPos + Vector3.new(0, 3, 0)
             root.Velocity = Vector3.zero
             root.RotVelocity = Vector3.zero
+            root.AssemblyAngularVelocity = Vector3.zero
             hum:ChangeState(Enum.HumanoidStateType.GettingUp)
         end)
+
+        -- 1.5 秒硬锁：把甩飞残留的速度彻底按掉
+        if SelfLock.on then
+            SelfLock:holdFor(savedPos + Vector3.new(0, 3, 0), 1.5)
+        end
     end)
 
     return 1
@@ -897,6 +978,28 @@ end)
 -- ══════════════════════════════════════════════════════════
 -- 工具页：Noclip / Fling / Parts Ring
 -- ══════════════════════════════════════════════════════════
+tabTool:CreateSection("防甩飞")
+
+tabTool:CreateToggle("启用防甩飞", false, function(on)
+    if on then
+        SelfLock:start()
+        win:Notify("防甩飞", "被弹飞会自动拉回原位", 3, { Type = "success" })
+    else
+        SelfLock:stop()
+    end
+end)
+
+tabTool:CreateSlider("速度阈值", 30, 400, 90, function(v)
+    SelfLock.velThreshold = v
+end)
+
+tabTool:CreateSlider("位移阈值", 3, 60, 12, function(v)
+    SelfLock.distThreshold = v
+end)
+
+tabTool:CreateParagraph("每帧检测速度/偏离，超过阈值就清速度并拉回锚点。", 2)
+
+tabTool:CreateDivider()
 tabTool:CreateSection("穿墙")
 
 tabTool:CreateToggle("启用 Noclip", false, function(on)
@@ -1090,6 +1193,7 @@ LightScript.Noclip = Noclip
 LightScript.Speed = Speed
 LightScript.Fling = Fling
 LightScript.TouchFling = TouchFling
+LightScript.SelfLock = SelfLock
 LightScript.Spin = Spin
 LightScript.Disaster = Disaster
 LightScript.Vote = Vote

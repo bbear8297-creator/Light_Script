@@ -205,6 +205,7 @@ return function(ctx)
     function Vote:stop()
         self.on = false
         if self.conn then pcall(function() task.cancel(self.conn) end); self.conn = nil end
+
     end
 
     ------------------------------------------------------------------
@@ -227,40 +228,61 @@ return function(ctx)
     tab:CreateDivider()
     tab:CreateSection("地图投票")
 
-    tab:CreateButton("显示投票页", function()
-        Vote:open()
-    end)
+    local mapDropdown
 
-    tab:CreateButton("列出选项", function()
+    local function refreshChoices(silent)
         local names = Vote:list()
         if #names == 0 then
-            win:Warning("投票", "投票页里没读到选项（可能需要先「显示投票页」）", 3)
-            return
+            if not silent then
+                win:Warning("投票", "没读到候选，等投票阶段再刷新", 3)
+            end
+            return 0
         end
-        win:Notify("候选地图", table.concat(names, " / "), 5, { Type = "info" })
+        if mapDropdown and mapDropdown.SetOptions then
+            mapDropdown:SetOptions(names)
+        end
+        Vote.target = names[1]
+        if not silent then
+            win:Notify("候选地图", "已更新 " .. #names .. " 项", 2, { Type = "success" })
+        end
         print("[NDS] 候选:", table.concat(names, " | "))
+        return #names
+    end
+
+    mapDropdown = tab:CreateDropdown("候选地图", { "（点刷新）" }, "（点刷新）", function(choice)
+        Vote.target = choice
     end)
 
-    tab:CreateTextbox("目标地图", "输入地图名", "", function(text)
-        Vote.target = text
+    tab:CreateButton("刷新候选", function()
+        refreshChoices(false)
     end)
 
     tab:CreateButton("投票", function()
+        if Vote.target == "" or Vote.target == "（点刷新）" then
+            win:Warning("投票", "先刷新候选并选一张图", 3)
+            return
+        end
         if not Vote:cast(Vote.target) then
-            win:Warning("投票", "没匹配到，先「列出选项」看名字", 3)
+            win:Warning("投票", "没匹配到「" .. tostring(Vote.target) .. "」", 3)
         end
     end)
 
     tab:CreateToggle("自动投票", false, function(on)
         if on then
-            if Vote.target == "" then win:Warning("投票", "先填目标地图名", 3); return end
+            if Vote.target == "" or Vote.target == "（点刷新）" then
+                win:Warning("投票", "先刷新候选并选一张图", 3)
+                return
+            end
             Vote:start()
-            win:Notify("投票", "每 2 秒尝试一次", 3, { Type = "success" })
+            win:Notify("投票", "每 2 秒投一次：" .. Vote.target, 3, { Type = "success" })
         else
             Vote:stop()
         end
     end)
 
+    tab:CreateParagraph("刷新 → 下拉选图 → 投票。自动投票会每 2 秒重复一次。", 2)
+
+    task.defer(function() refreshChoices(true) end)
     return {
         name = "Disaster & Vote",
         Disaster = Disaster,
