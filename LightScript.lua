@@ -547,6 +547,44 @@ function SelfLock:holdFor(anchorCF, duration)
 end
 
 -- ══════════════════════════════════════════════════════════
+-- 无敌 / 防摔死
+--   甩飞时给自己写天文速度，物理引擎会按"撕裂伤害"打死角色。
+--   做法：每帧补满血 + 关掉 BreakJointsOnDeath + CharacterAdded 后重新接管。
+-- ══════════════════════════════════════════════════════════
+local God = { on = false, conn = nil, charConn = nil }
+
+function God:heal()
+    local char = LP.Character
+    local hum = char and char:FindFirstChildOfClass("Humanoid")
+    if not hum then return end
+    pcall(function()
+        hum.BreakJointsOnDeath = false
+        if hum.Health < hum.MaxHealth then hum.Health = hum.MaxHealth end
+    end)
+end
+
+function God:start()
+    if self.on then return end
+    self.on = true
+    self:heal()
+
+    self.conn = RunService.Heartbeat:Connect(function()
+        if self.on then self:heal() end
+    end)
+
+    self.charConn = LP.CharacterAdded:Connect(function()
+        task.wait(1)
+        if self.on then self:heal() end
+    end)
+end
+
+function God:stop()
+    self.on = false
+    if self.conn then self.conn:Disconnect(); self.conn = nil end
+    if self.charConn then self.charConn:Disconnect(); self.charConn = nil end
+end
+
+-- ══════════════════════════════════════════════════════════
 -- Fling：SkidFling（原作 zqyDSUWX）
 --   本质：把自己 CFrame 塞进目标身体里，配上天文级速度/角速度疯狂旋转，
 --         物理求解器会把目标直接弹飞。
@@ -598,6 +636,8 @@ function Fling(radius, duration)
 
             -- 关键：只让"重叠"发生在一帧内，立刻把自己钉回去
             if SelfLock.on then SelfLock:snap() end
+            -- 每帧回血：天文速度会被判为撕裂伤害，不补必死
+            God:heal()
         end
 
         pcall(function() bv:Destroy() end)
@@ -999,6 +1039,17 @@ end)
 
 tabTool:CreateParagraph("每帧检测速度/偏离，超过阈值就清速度并拉回锚点。", 2)
 
+tabTool:CreateToggle("启用无敌（防摔死）", false, function(on)
+    if on then
+        God:start()
+        win:Notify("无敌", "每帧补满血，甩飞不会摔死", 3, { Type = "success" })
+    else
+        God:stop()
+    end
+end)
+
+tabTool:CreateParagraph("甩飞时角色速度极高，引擎会按撕裂伤害判死。开了这个就不会死。", 2)
+
 tabTool:CreateDivider()
 tabTool:CreateSection("穿墙")
 
@@ -1194,6 +1245,7 @@ LightScript.Speed = Speed
 LightScript.Fling = Fling
 LightScript.TouchFling = TouchFling
 LightScript.SelfLock = SelfLock
+LightScript.God = God
 LightScript.Spin = Spin
 LightScript.Disaster = Disaster
 LightScript.Vote = Vote
