@@ -475,6 +475,55 @@ function Fling(radius, duration)
 
     return 1
 end
+-- ══════════════════════════════════════════════════════════
+-- 旋转甩飞（漩涡模式）
+--   原理：给自己 RootPart 写巨大的 AssemblyAngularVelocity，让角色高速自转。
+--   客户端对自己的角色有完全所有权，这个写入一定生效；
+--   自转的身体撞到别人时冲量会传给对方 → 甩飞。
+--   参考 danyad22/Fling
+-- ══════════════════════════════════════════════════════════
+local Spin = { on = false, power = 100, conn = nil }
+
+function Spin:start()
+    if self.on then return end
+    local char = LP.Character
+    local hum = char and char:FindFirstChildOfClass("Humanoid")
+    local root = char and char:FindFirstChild("HumanoidRootPart")
+    if not (hum and root) then
+        win:Warning("旋转甩飞", "角色还没加载好", 3)
+        return
+    end
+
+    self.on = true
+    pcall(function() hum:ChangeState(Enum.HumanoidStateType.StrafingNoPhysics) end)
+
+    self.conn = RunService.Heartbeat:Connect(function()
+        if not self.on then return end
+        local r = Fly:root()
+        if not r then self:stop(); return end
+        pcall(function()
+            r.AssemblyAngularVelocity = Vector3.new(
+                math.random(-500, 50),
+                math.random(-500, 500) * self.power,
+                math.random(-5, 5)
+            )
+        end)
+    end)
+    win:SetIslandStatus("旋转甩飞中")
+end
+
+function Spin:stop()
+    self.on = false
+    if self.conn then self.conn:Disconnect(); self.conn = nil end
+    local char = LP.Character
+    local hum = char and char:FindFirstChildOfClass("Humanoid")
+    local root = char and char:FindFirstChild("HumanoidRootPart")
+    if root then pcall(function() root.AssemblyAngularVelocity = Vector3.zero end) end
+    if hum then pcall(function() hum:ChangeState(Enum.HumanoidStateType.GettingUp) end) end
+    win:SetIslandStatus("待机")
+end
+
+-- ══════════════════════════════════════════════════════════
 -- Parts 环绕（所有权劫持版）
 --   原理同 Super Ring Parts：
 --   1) sethiddenproperty(SimulationRadius, inf) 抢到附近部件的物理所有权
@@ -768,6 +817,21 @@ tabTool:CreateToggle("自动甩飞", false, function(on)
 end)
 
 tabTool:CreateDivider()
+tabTool:CreateSection("旋转甩飞（漩涡）")
+
+tabTool:CreateToggle("启用旋转甩飞", false, function(on)
+    if on then Spin:start() else Spin:stop() end
+end)
+
+tabTool:CreateSlider("旋转力度", 10, 300, 100, function(v)
+    Spin.power = v
+end)
+
+tabTool:CreateParagraph(
+    "开启后角色高速自转，撞到谁就甩飞谁。\n" ..
+    "力度越大越猛，贴身站着效果最好。", 2)
+
+tabTool:CreateDivider()
 tabTool:CreateSection("Parts 环绕")
 
 tabTool:CreateToggle("启用环绕", false, function(on)
@@ -888,6 +952,7 @@ LightScript.Ring = Ring
 LightScript.Noclip = Noclip
 LightScript.Speed = Speed
 LightScript.Fling = Fling
+LightScript.Spin = Spin
 
 win:SetIslandStatus("启动中")
 win:SetIslandDot(Theme.Success)
