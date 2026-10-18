@@ -301,6 +301,7 @@ function Fly:stop(silent)
     self.upTicks = 0
     local root, hum = self:root(), self:humanoid()
     pcall(function() self:restorePose() end)
+    pcall(function() self:restoreArms() end)
     pcall(function() self:freezeAnim(false) end)   -- 恢复默认动画
     if root then pcall(function() root.Anchored = false end) end
     if hum then
@@ -379,6 +380,9 @@ function Fly:start()
 
         local faceDir = traveling and dir.Unit or flatLook
 
+        -- 手臂姿态：飞 = 单臂前伸，悬浮 = 抱胸
+        self:setArms(traveling and "fly" or "cross")
+
         -- 前倾角：默认 35°，滑条可调；只旋转，不动机骨
         local wantLean = traveling and math.rad(self.leanDeg or 35) or 0
         self.lean = (self.lean or 0) + (wantLean - (self.lean or 0)) * math.clamp(dt * 7, 0, 1)
@@ -407,6 +411,61 @@ function Fly:start()
 
     win:SetIslandStatus("飞行中")
     return true
+end
+
+-- ══════════════════════════════════════════════════════════
+-- 手臂姿态：飞行 = 右臂前伸，悬浮 = 双臂抱胸
+--   直接改肩关节 C0，配合冻结动画使用
+-- ══════════════════════════════════════════════════════════
+Fly.baseC0 = {}
+Fly.armMode = "none"
+Fly.armRight = -88     -- 飞行：右臂前伸角度
+Fly.armLeft  = 148     -- 飞行：左臂贴身角度
+
+local function buildPose()
+    local fly = {
+        right = CFrame.Angles(math.rad(Fly.armRight), 0, 0),
+        left  = CFrame.Angles(math.rad(Fly.armLeft), 0, 0),
+    }
+    local cross = {
+        right = CFrame.Angles(math.rad(-62), 0, math.rad(-40)),
+        left  = CFrame.Angles(math.rad(-62), 0, math.rad(40)),
+    }
+    local none = { right = CFrame.Angles(0, 0, 0), left = CFrame.Angles(0, 0, 0) }
+    return { fly = fly, cross = cross, none = none }
+end
+
+function Fly:refreshArms()
+    local mode = self.armMode
+    self.armMode = "?"
+    self:setArms(mode)
+end
+
+function Fly:setArms(mode)
+    if self.armMode == mode then return end
+    self.armMode = mode
+    local char = LP.Character
+    if not char then return end
+
+    local pose = buildPose()[mode] or buildPose().none
+    for _, name in ipairs({ "Right Shoulder", "Left Shoulder", "RightUpperArm", "LeftUpperArm" }) do
+        local m = char:FindFirstChild(name, true)
+        if m and m:IsA("Motor6D") then
+            if not self.baseC0[m] then self.baseC0[m] = m.C0 end
+            local offset = name:find("Right") and pose.right or pose.left
+            pcall(function()
+                m.C0 = self.baseC0[m] * offset
+            end)
+        end
+    end
+end
+
+function Fly:restoreArms()
+    for m, c0 in pairs(self.baseC0) do
+        pcall(function() m.C0 = c0 end)
+    end
+    self.baseC0 = {}
+    self.armMode = "none"
 end
 
 -- 飞行时冻结默认动画（举手乱挥就是 Freefall / Idle 动画在播）
@@ -549,6 +608,20 @@ end)
 local sliderLean
 sliderLean = tabMove:CreateSlider("前倾角度", 0, 90, 35, function(v)
     Fly.leanDeg = v
+end)
+
+tabMove:CreateSection("飞行姿态")
+
+local sliderArmR
+sliderArmR = tabMove:CreateSlider("右臂前伸", -140, 0, -88, function(v)
+    Fly.armRight = v
+    Fly:refreshArms()
+end)
+
+local sliderArmL
+sliderArmL = tabMove:CreateSlider("左臂贴身", 90, 180, 148, function(v)
+    Fly.armLeft = v
+    Fly:refreshArms()
 end)
 
 local bindFly
