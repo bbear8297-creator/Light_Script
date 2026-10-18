@@ -1000,7 +1000,8 @@ LightScript.Fly = Fly
 LightScript.Ring = Ring
 LightScript.Noclip = Noclip
 LightScript.Speed = Speed
-LightScript.Fling = Fling`nLightScript.TouchFling = TouchFling
+LightScript.Fling = Fling
+LightScript.TouchFling = TouchFling
 LightScript.Spin = Spin
 
 win:SetIslandStatus("启动中")
