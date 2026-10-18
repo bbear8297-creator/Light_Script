@@ -265,6 +265,7 @@ end
 local Fly = {
     enabled = false,
     speed = 65,
+    leanDeg = 35,
     conn = nil,
     jumpConn = nil,
     upTicks = 0,
@@ -299,6 +300,8 @@ function Fly:stop(silent)
     if self.jumpConn then self.jumpConn:Disconnect(); self.jumpConn = nil end
     self.upTicks = 0
     local root, hum = self:root(), self:humanoid()
+    pcall(function() self:restorePose() end)
+    pcall(function() self:freezeAnim(false) end)   -- 恢复默认动画
     if root then pcall(function() root.Anchored = false end) end
     if hum then
         hum.PlatformStand = false
@@ -317,8 +320,16 @@ function Fly:start()
 
     self.enabled = true
     self.upTicks = 0
+    self.t = 0
+    self.idleTime = 999
+    self.poseOn = false
     hum.PlatformStand = false    -- 保留人形动画，人物不会僵住
     root.Anchored = true         -- 去掉重力、碰撞、所有外力
+
+    -- 等骨骼就绪再冻结动画
+    task.delay(0.15, function()
+        if self.enabled then self:freezeAnim(true) end
+    end)
 
     self.conn = RunService.Heartbeat:Connect(function(dt)
         if not self.enabled then return end
@@ -344,21 +355,49 @@ function Fly:start()
         local mag = dir.Magnitude
         if mag > 1 then dir = dir / mag end
 
-        -- 位移
-        local newPos = r.Position + dir * self.speed * dt
+        -- 空中上下浮动：速度做正弦，位移自然起浮
+        self.t = (self.t or 0) + dt
+        local bobVel = math.cos(self.t * 2.0) * 1.1
 
-        -- 朝向：让角色正面与相机同向 → 背部永远对着镜头
+        local newPos = r.Position + (dir * self.speed + Vector3.new(0, bobVel, 0)) * dt
+
+        -- 姿态判定：在动 = 超人俯冲，不动 = 直立悬浮
+        local traveling = dir.Magnitude > 0.05
+        self.idleTime = traveling and 0 or ((self.idleTime or 0) + dt)
+        local wantSuper = self.idleTime < 0.20       -- 0.2s 迟滞，避免抖动
+
+        if wantSuper ~= self.poseOn then
+            self.poseOn = wantSuper
+        end
+
+        local camLook = (cam and cam.CFrame.LookVector) or Vector3.new(0, 0, -1)
+
+        -- 待机时只取水平朝向：镜头仰俯不该把人带歪，人要立着
+        local flatLook = Vector3.new(camLook.X, 0, camLook.Z)
+        if flatLook.Magnitude < 0.01 then flatLook = Vector3.new(0, 0, -1) end
+        flatLook = flatLook.Unit
+
+        local faceDir = traveling and dir.Unit or flatLook
+
+        -- 前倾角：默认 35°，滑条可调；只旋转，不动机骨
+        local wantLean = traveling and math.rad(self.leanDeg or 35) or 0
+        self.lean = (self.lean or 0) + (wantLean - (self.lean or 0)) * math.clamp(dt * 7, 0, 1)
+
+        local bankTarget = (-mv.X) * math.rad(12)
+        self.bank = (self.bank or 0) + (bankTarget - (self.bank or 0)) * math.clamp(dt * 6, 0, 1)
+
+        local upright = CFrame.lookAt(newPos, newPos + faceDir)
+        local target = upright * CFrame.Angles(-self.lean, 0, 0) * CFrame.Angles(0, 0, self.bank)
+
         local currentRot = r.CFrame - r.CFrame.Position
-        local targetRot = cam and CFrame.lookAt(Vector3.zero, cam.CFrame.LookVector) or currentRot
-        local alpha = math.clamp(dt * 14, 0, 1)          -- 平滑转身，不生硬
-        local newRot = currentRot:Lerp(targetRot, alpha)
+        local alpha = math.clamp(dt * 8, 0, 1)
+        r.CFrame = CFrame.new(newPos) * currentRot:Lerp(target - target.Position, alpha)
 
-        r.CFrame = CFrame.new(newPos) * newRot
-
-        -- 让动画保持在"空中"状态，避免落地待机姿势
-        local h = self:humanoid()
-        if h and h.FloorMaterial ~= Enum.Material.Air then
-            pcall(function() h:ChangeState(Enum.HumanoidStateType.Freefall) end)
+        -- 人形状态切换会重播动画，定期再冻结一次
+        self.animTick = (self.animTick or 0) + dt
+        if self.animTick > 0.5 then
+            self.animTick = 0
+            self:freezeAnim(true)
         end
     end)
 
@@ -370,8 +409,56 @@ function Fly:start()
     return true
 end
 
+-- 飞行时冻结默认动画（举手乱挥就是 Freefall / Idle 动画在播）
+function Fly:freezeAnim(on)
+    local char = LP.Character
+    if not char then return end
+    local anim = char:FindFirstChildOfClass("Animate")
+    if anim then anim.Disabled = on end
+
+    local hum = char:FindFirstChildOfClass("Humanoid")
+    local animator = hum and hum:FindFirstChildOfClass("Animator")
+    if animator then
+        pcall(function()
+            for _, track in ipairs(animator:GetPlayingAnimationTracks()) do
+                track:Stop(0)
+            end
+        end)
+    end
+end
+
 function Fly:setSpeed(v)
     self.speed = v
+end
+
+-- ══════════════════════════════════════════════════════════
+-- 超人姿态：身体躺平（头朝飞行方向、肚皮朝下），手臂前伸
+--   R6 用 "Right Shoulder"/"Left Shoulder"，R15 用 "*UpperArm"
+-- ══════════════════════════════════════════════════════════
+Fly.savedJoints = {}
+
+function Fly:setPose(on)
+    local char = LP.Character
+    if not char then return end
+    for _, name in ipairs({ "Right Shoulder", "Left Shoulder", "RightUpperArm", "LeftUpperArm" }) do
+        local m = char:FindFirstChild(name, true)
+        if m and m:IsA("Motor6D") then
+            if on then
+                if not self.savedJoints[m] then self.savedJoints[m] = m.C0 end
+                m.C0 = self.savedJoints[m] * CFrame.Angles(math.pi, 0, 0)
+            elseif self.savedJoints[m] then
+                m.C0 = self.savedJoints[m]
+                self.savedJoints[m] = nil
+            end
+        end
+    end
+end
+
+function Fly:restorePose()
+    for m, c0 in pairs(self.savedJoints) do
+        pcall(function() m.C0 = c0 end)
+    end
+    self.savedJoints = {}
 end
 
 LightScript.Fly = Fly          -- 暴露给外部/调试用
@@ -457,6 +544,11 @@ end)
 local sliderSpeed
 sliderSpeed = tabMove:CreateSlider("飞行速度", 10, 300, Fly.speed, function(v)
     Fly:setSpeed(v)
+end)
+
+local sliderLean
+sliderLean = tabMove:CreateSlider("前倾角度", 0, 90, 35, function(v)
+    Fly.leanDeg = v
 end)
 
 local bindFly
