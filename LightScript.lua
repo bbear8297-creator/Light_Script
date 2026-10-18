@@ -573,6 +573,75 @@ function TouchFling(radius)
 end
 
 -- ══════════════════════════════════════════════════════════
+-- 灾害预警（Natural Disaster Survival）
+--   服务器随机选灾害，客户端拿不到 RNG；
+--   但灾害模型/预选值会先复制到客户端，抢在那一帧报告就等于提前知道。
+--   两条路：① 监听 workspace 生成；② 轮询 StringValue 预选值
+-- ══════════════════════════════════════════════════════════
+local Disaster = { on = false, conns = {}, last = nil, lastAt = 0, pollConn = nil }
+
+Disaster.Names = {
+    "Tornado", "Earthquake", "Flood", "Volcano", "Meteor Shower",
+    "Blizzard", "Sandstorm", "Thunderstorm", "Tsunami", "Fire",
+    "Acid Rain", "Flash Flood", "Rising Lava", "Deadly Virus",
+    "Space Rock", "Sand Storm", "Lightning", "Lava",
+}
+
+local function matchDisaster(name)
+    if type(name) ~= "string" or name == "" then return nil end
+    local lower = name:lower()
+    for _, d in ipairs(Disaster.Names) do
+        if lower:find(d:lower(), 1, true) then return d end
+    end
+    return nil
+end
+
+function Disaster:report(name)
+    if self.last == name and (tick() - self.lastAt) < 8 then return end
+    self.last = name
+    self.lastAt = tick()
+    win:Notify("灾害预警", name, 6, { Type = "warning" })
+    win:SetIslandStatus("灾害：" .. name)
+    pcall(function() win:SetIslandDot(Color3.fromRGB(255, 176, 32)) end)
+    print("[LightScript] 灾害预警:", name)
+end
+
+function Disaster:start()
+    if self.on then return end
+    self.on = true
+
+    table.insert(self.conns, workspace.DescendantAdded:Connect(function(d)
+        if not self.on then return end
+        local hit = matchDisaster(d.Name)
+        if hit then self:report(hit) end
+    end))
+
+    self.pollConn = task.spawn(function()
+        while self.on do
+            pcall(function()
+                for _, root in ipairs({ workspace, game:GetService("ReplicatedStorage") }) do
+                    for _, v in ipairs(root:GetDescendants()) do
+                        if v:IsA("StringValue") or v:IsA("ObjectValue") then
+                            local hit = matchDisaster(tostring(v.Value))
+                            if hit then self:report(hit) end
+                        end
+                    end
+                end
+            end)
+            task.wait(1.5)
+        end
+    end)
+end
+
+function Disaster:stop()
+    self.on = false
+    for _, c in ipairs(self.conns) do pcall(function() c:Disconnect() end) end
+    self.conns = {}
+    if self.pollConn then pcall(function() task.cancel(self.pollConn) end); self.pollConn = nil end
+    win:SetIslandStatus("待机")
+end
+
+-- ══════════════════════════════════════════════════════════
 -- Parts 环绕（所有权劫持版）
 --   原理同 Super Ring Parts：
 --   1) sethiddenproperty(SimulationRadius, inf) 抢到附近部件的物理所有权
@@ -904,6 +973,22 @@ tabTool:CreateParagraph(
     "纯客户端能做到的最后一种方式，成不成看服务端。", 2)
 
 tabTool:CreateDivider()
+tabTool:CreateSection("灾害预警（NDS）")
+
+tabTool:CreateToggle("启用灾害预警", false, function(on)
+    if on then
+        Disaster:start()
+        win:Notify("灾害预警", "已开始监听，灾害一出现就提示", 3, { Type = "success" })
+    else
+        Disaster:stop()
+    end
+end)
+
+tabTool:CreateParagraph(
+    "监听 workspace 生成 + 预选值轮询，抢在警报前报出灾害名。\n" ..
+    "服务器随机挑选，客户端只能提前感知、不能预知。", 2)
+
+tabTool:CreateDivider()
 tabTool:CreateSection("Parts 环绕")
 
 tabTool:CreateToggle("启用环绕", false, function(on)
@@ -1026,6 +1111,7 @@ LightScript.Speed = Speed
 LightScript.Fling = Fling
 LightScript.TouchFling = TouchFling
 LightScript.Spin = Spin
+LightScript.Disaster = Disaster
 
 win:SetIslandStatus("启动中")
 win:SetIslandDot(Theme.Success)
