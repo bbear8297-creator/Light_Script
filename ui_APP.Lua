@@ -730,6 +730,7 @@ function Library:CreateWindow(options)
     local destroyed = false
 
     local function showMain()
+        if destroyed then return end              -- ★ 已销毁就不再复活动画
         if isMainOpen or isMainAnimating then return end
         isMainOpen, isMainAnimating = true, true
         MainFrame.Visible = true
@@ -743,6 +744,7 @@ function Library:CreateWindow(options)
     end
 
     local function hideMain()
+        if destroyed then return end
         if not isMainOpen or isMainAnimating then return end
         isMainOpen, isMainAnimating = false, true
         blurCtrl.SetOn(false)
@@ -846,7 +848,14 @@ function Library:CreateWindow(options)
             ImageColor3 = Theme.SubText
         }):Play()
     end)
-    closeBtn.MouseButton1Click:Connect(hideMain)
+    -- ★ 右上角 X 的行为可配置：
+    --   CreateWindow({ CloseButton = "destroy" }) → 点 X 直接销毁
+    --   默认 "hide" → 只隐藏，点灵动岛可再展开
+    local closeAction = options.CloseButton or "hide"
+    local onCloseButton
+    closeBtn.MouseButton1Click:Connect(function()
+        if onCloseButton then onCloseButton() end
+    end)
 
     local topDivider = Instance.new("Frame")
     topDivider.Size = UDim2.new(1, -32, 0, 1)
@@ -2448,6 +2457,21 @@ function Library:CreateWindow(options)
 
         return Elements
     end
+
+    -- X 按钮的实际行为（Window 表已就绪）
+    onCloseButton = function()
+        if closeAction == "destroy" then
+            Window:Destroy()
+        else
+            hideMain()
+        end
+    end
+
+    function Window:SetCloseAction(mode)
+        closeAction = (mode == "destroy") and "destroy" or "hide"
+        return closeAction
+    end
+    function Window:GetCloseAction() return closeAction end
 
     function Window:Destroy()
         if destroyed then return end          -- ★ 幂等：重复销毁直接返回

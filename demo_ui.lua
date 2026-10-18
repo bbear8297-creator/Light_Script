@@ -245,6 +245,15 @@ guard("Button", function()
 end)
 
 guard("Button", function()
+    return tabSetting:CreateButton("切换 X 按钮行为（隐藏 ↔ 销毁）", function()
+        local nextMode = (win:GetCloseAction() == "destroy") and "hide" or "destroy"
+        win:SetCloseAction(nextMode)
+        win:Toast("X 按钮", nextMode == "destroy" and "现在点 X 会直接销毁窗口"
+            or "现在点 X 只隐藏，点灵动岛可展开", 3)
+    end)
+end)
+
+guard("Button", function()
     return tabSetting:CreateButton("销毁全部窗口（测 DestroyAll）", function()
         win:Toast("即将销毁", "3 秒后执行 Library:DestroyAll()", 2)
         task.delay(3, function()
