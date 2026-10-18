@@ -110,11 +110,11 @@ if not win then
 end
 win:ShowMain()
 
-local tabHome    = win:CreateTab("概览",  "rbxassetid://10709752508")
-local tabCombat  = win:CreateTab("战斗",  "rbxassetid://10709753272")
-local tabVisual  = win:CreateTab("视觉",  "rbxassetid://10709752405")
-local tabSetting = win:CreateTab("设置")
-local tabAbout   = win:CreateTab("关于")
+local tabHome    = win:CreateTab("概览",  "dashboard")
+local tabCombat  = win:CreateTab("战斗",  "combat")
+local tabVisual  = win:CreateTab("视觉",  "visual")
+local tabSetting = win:CreateTab("设置",  "settings")
+local tabAbout   = win:CreateTab("关于",  "info")
 
 -- ───────────────────────────────────────────── Tab 1 · 概览
 tabHome:CreateSection("玩家信息")

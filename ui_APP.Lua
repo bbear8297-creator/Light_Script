@@ -633,6 +633,111 @@ local function CreateDynamicIsland(parent, theme, callbacks)
 end
 
 -- ═══════════════════════════════════════════════════════════
+-- 内建矢量图标（16×16，纯 Frame 绘制，不依赖 rbxassetid）
+--   用法：win:CreateTab("战斗", "combat")
+--   可用名：dashboard combat visual settings info
+--           （别名：gear/sliders→settings，eye→visual，crosshair/sword→combat）
+-- ═══════════════════════════════════════════════════════════
+local IconPainters = {}
+
+do
+    local function part(holder, items, size, pos, radius)
+        local f = Instance.new("Frame")
+        f.Size = size
+        f.Position = pos
+        f.BorderSizePixel = 0
+        f.ZIndex = 6
+        f.Parent = holder
+        local c = Instance.new("UICorner")
+        c.CornerRadius = radius or UDim.new(1, 0)
+        c.Parent = f
+        items[#items + 1] = function(color) f.BackgroundColor3 = color end
+        return f
+    end
+
+    local function outline(holder, items, size, pos, radius, thickness)
+        local f = part(holder, items, size, pos, radius)
+        f.BackgroundTransparency = 1
+        local s = Instance.new("UIStroke")
+        s.Thickness = thickness or 1.5
+        s.Parent = f
+        items[#items] = function(color) s.Color = color end
+        return f
+    end
+
+    local function finish(items)
+        return function(color)
+            for _, paint in ipairs(items) do paint(color) end
+        end
+    end
+
+    local function px(x, y) return UDim2.new(0, x, 0, y) end
+    local function sz(w, h) return UDim2.new(0, w, 0, h) end
+
+    -- 概览：2×2 方格
+    IconPainters.dashboard = function(holder)
+        local it = {}
+        part(holder, it, sz(7, 7), px(0, 0), UDim.new(0, 2))
+        part(holder, it, sz(7, 7), px(9, 0), UDim.new(0, 2))
+        part(holder, it, sz(7, 7), px(0, 9), UDim.new(0, 2))
+        part(holder, it, sz(7, 7), px(9, 9), UDim.new(0, 2))
+        return finish(it)
+    end
+
+    -- 战斗：准星
+    IconPainters.combat = function(holder)
+        local it = {}
+        outline(holder, it, sz(12, 12), px(2, 2), UDim.new(1, 0), 1.5)
+        part(holder, it, sz(4, 4), px(6, 6))
+        part(holder, it, sz(2, 3), px(7, 0), UDim.new(1, 0))
+        part(holder, it, sz(2, 3), px(7, 13), UDim.new(1, 0))
+        part(holder, it, sz(3, 2), px(0, 7), UDim.new(1, 0))
+        part(holder, it, sz(3, 2), px(13, 7), UDim.new(1, 0))
+        return finish(it)
+    end
+
+    -- 视觉：眼睛
+    IconPainters.visual = function(holder)
+        local it = {}
+        outline(holder, it, sz(16, 10), px(0, 3), UDim.new(1, 0), 1.5)
+        part(holder, it, sz(6, 6), px(5, 5))
+        return finish(it)
+    end
+
+    -- 设置：三档滑块
+    IconPainters.settings = function(holder)
+        local it = {}
+        part(holder, it, sz(16, 2), px(0, 3), UDim.new(1, 0))
+        part(holder, it, sz(16, 2), px(0, 7), UDim.new(1, 0))
+        part(holder, it, sz(16, 2), px(0, 11), UDim.new(1, 0))
+        part(holder, it, sz(5, 5), px(10, 1))
+        part(holder, it, sz(5, 5), px(3, 5))
+        part(holder, it, sz(5, 5), px(8, 9))
+        return finish(it)
+    end
+
+    -- 关于：信息圈
+    IconPainters.info = function(holder)
+        local it = {}
+        outline(holder, it, sz(16, 16), px(0, 0), UDim.new(1, 0), 1.5)
+        part(holder, it, sz(3, 3), px(6, 4))
+        part(holder, it, sz(3, 6), px(6, 8), UDim.new(1, 0))
+        return finish(it)
+    end
+
+    -- 别名
+    IconPainters.gear = IconPainters.settings
+    IconPainters.sliders = IconPainters.settings
+    IconPainters.eye = IconPainters.visual
+    IconPainters.crosshair = IconPainters.combat
+    IconPainters.sword = IconPainters.combat
+
+    Library.IconNames = {
+        "dashboard", "combat", "visual", "settings", "info",
+    }
+end
+
+-- ═══════════════════════════════════════════════════════════
 -- CreateWindow
 -- ═══════════════════════════════════════════════════════════
 function Library:CreateWindow(options)
@@ -724,6 +829,45 @@ function Library:CreateWindow(options)
         l.Parent = NotifContainer
     end
     local notifOrder = 0
+
+    -- ═══════════════════════════════════════════════════════
+    -- 通知回收泵
+    --   之前只靠 task.delay 自毁：回调没跑 / 里面 tween 抛错，
+    --   卡片就永远挂在屏幕上。现在改成心跳轮询 + 硬超时兜底。
+    -- ═══════════════════════════════════════════════════════
+    local pendingNotifs = {}
+    local notifPumpConn
+
+    local function dismissNotif(entry)
+        if entry.dying then return end
+        entry.dying = true
+        pcall(function()
+            TweenService:Create(entry.body,
+                TweenInfo.new(0.25, Enum.EasingStyle.Quart, Enum.EasingDirection.In),
+                { Position = UDim2.new(1, 40, 0, 0) }):Play()
+            TweenService:Create(entry.scale, TweenInfo.new(0.25), { Scale = 0.85 }):Play()
+        end)
+        entry.killAt = os.clock() + 0.35
+    end
+
+    local function notifPump()
+        local now = os.clock()
+        for i = #pendingNotifs, 1, -1 do
+            local e = pendingNotifs[i]
+            if not e.frame or not e.frame.Parent then
+                table.remove(pendingNotifs, i)
+            elseif not e.dying then
+                if now >= e.expire then dismissNotif(e) end
+            elseif now >= (e.killAt or 0) then
+                pcall(function() if e.frame then e.frame:Destroy() end end)
+                table.remove(pendingNotifs, i)
+            end
+        end
+        if #pendingNotifs == 0 and notifPumpConn then
+            notifPumpConn:Disconnect()
+            notifPumpConn = nil
+        end
+    end
 
     local MainFrame, MainScale, Island
     local isMainOpen, isMainAnimating = false, false
@@ -1022,14 +1166,18 @@ function Library:CreateWindow(options)
         TweenService:Create(sc, TweenInfo.new(0.4, Enum.EasingStyle.Back, Enum.EasingDirection.Out),
             { Scale = 1 }):Play()
 
-        task.delay(duration, function()
-            if not notif.Parent then return end
-            TweenService:Create(body, TweenInfo.new(0.3, Enum.EasingStyle.Quart, Enum.EasingDirection.In),
-                { Position = UDim2.new(1, 40, 0, 0) }):Play()
-            TweenService:Create(sc, TweenInfo.new(0.3), { Scale = 0.85 }):Play()
-            task.wait(0.32)
-            if notif.Parent then notif:Destroy() end
-        end)
+        -- ★ 不再依赖 task.delay：登记到心跳队列，由 pump 统一回收
+        pendingNotifs[#pendingNotifs + 1] = {
+            frame = notif,
+            body = body,
+            scale = sc,
+            expire = os.clock() + duration,
+            dying = false,
+        }
+        if not notifPumpConn then
+            notifPumpConn = track(RunService.Heartbeat:Connect(notifPump))
+        end
+
         return notif
     end
 
@@ -1127,22 +1275,34 @@ function Library:CreateWindow(options)
             l.Parent = holder
         end
 
+        -- ★ 图标：内建矢量（按功能名），或沿用 rbxassetid
+        local repaintIcon
         if iconId then
             if type(iconId) == "table" then
                 iconOptions = iconId
                 iconId = iconOptions.Image
             end
-            local icon = Instance.new("ImageLabel")
-            local sz = UDim2.new(0, 16, 0, 16)
-            if iconOptions and iconOptions.Size then sz = iconOptions.Size end
-            icon.Size = sz
-            icon.Image = iconId
-            icon.BackgroundTransparency = 1
-            if iconOptions and iconOptions.ImageColor3 then
-                icon.ImageColor3 = iconOptions.ImageColor3
+            local forcedColor = iconOptions and iconOptions.ImageColor3
+            if type(iconId) == "string" and IconPainters[iconId] then
+                local iconHolder = Instance.new("Frame")
+                iconHolder.Size = UDim2.new(0, 16, 0, 16)
+                iconHolder.BackgroundTransparency = 1
+                iconHolder.ZIndex = 6
+                iconHolder.Parent = holder
+                repaintIcon = IconPainters[iconId](iconHolder)
+                if forcedColor then repaintIcon(forcedColor) end
+            else
+                local icon = Instance.new("ImageLabel")
+                local sz = UDim2.new(0, 16, 0, 16)
+                if iconOptions and iconOptions.Size then sz = iconOptions.Size end
+                icon.Size = sz
+                icon.Image = iconId
+                icon.BackgroundTransparency = 1
+                if forcedColor then icon.ImageColor3 = forcedColor end
+                icon.ZIndex = 6
+                icon.Parent = holder
+                repaintIcon = function(c) icon.ImageColor3 = c end
             end
-            icon.ZIndex = 6
-            icon.Parent = holder
         end
 
         local tabText = Instance.new("TextLabel")
@@ -1158,15 +1318,19 @@ function Library:CreateWindow(options)
 
         local isSelected = false
         local function apply(t)
+            local tint
             if isSelected then
+                tint = t.AccentHi
                 tabText.TextColor3 = t.AccentHi
                 TabButton.BackgroundColor3 = t.Accent
                 TabButton.BackgroundTransparency = 0.82
             else
+                tint = t.SubText
                 tabText.TextColor3 = t.SubText
                 TabButton.BackgroundColor3 = Color3.fromRGB(28, 28, 36)
                 TabButton.BackgroundTransparency = 1
             end
+            if repaintIcon then repaintIcon(tint) end
         end
         RegisterTheme(apply)
 
