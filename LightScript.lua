@@ -257,13 +257,22 @@ function LightScript:LoadProject(entry)
         return false, tostring(cerr)
     end
 
-    local ok, res = pcall(chunk, { Library = Library, Window = win, Project = entry.name })
+    local ctx = { Library = Library, Window = win, Project = entry.name }
+
+    -- 子项目是 `return function(ctx)` 结构：先执行文件拿到工厂，再用 ctx 调用它
+    local ok, res = pcall(chunk)
+    if ok and type(res) == "function" then
+        ok, res = pcall(res, ctx)
+    elseif ok then
+        res = nil
+    end
+
     if not ok then
         Projects.failed[entry.name] = tostring(res)
         return false, tostring(res)
     end
 
-    Projects.loaded[entry.name] = res
+    Projects.loaded[entry.name] = res or true
     return true
 end
 

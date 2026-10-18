@@ -1350,7 +1350,7 @@ function Library:CreateWindow(options)
     function Window:CreateTab(TabName, iconId, iconOptions)
         local TabButton = Instance.new("TextButton")
         TabButton.Name = TabName
-        TabButton.Size = UDim2.new(1, -16, 0, 38)
+        TabButton.Size = UDim2.new(1, -16, 0, 30)
         TabButton.BackgroundTransparency = 1
         TabButton.Text = ""
         TabButton.AutoButtonColor = false
@@ -1386,7 +1386,7 @@ function Library:CreateWindow(options)
             local forcedColor = iconOptions and iconOptions.ImageColor3
             if type(iconId) == "string" and IconPainters[iconId] then
                 local iconHolder = Instance.new("Frame")
-                iconHolder.Size = UDim2.new(0, 16, 0, 16)
+                iconHolder.Size = UDim2.new(0, 14, 0, 14)
                 iconHolder.BackgroundTransparency = 1
                 iconHolder.ZIndex = 6
                 iconHolder.Parent = holder
@@ -1394,7 +1394,7 @@ function Library:CreateWindow(options)
                 if forcedColor then repaintIcon(forcedColor) end
             else
                 local icon = Instance.new("ImageLabel")
-                local sz = UDim2.new(0, 16, 0, 16)
+                local sz = UDim2.new(0, 14, 0, 14)
                 if iconOptions and iconOptions.Size then sz = iconOptions.Size end
                 icon.Size = sz
                 icon.Image = iconId
