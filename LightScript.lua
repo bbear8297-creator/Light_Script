@@ -881,6 +881,19 @@ tabTool:CreateParagraph(
     "力度越大越猛，贴身站着效果最好。", 2)
 
 tabTool:CreateDivider()
+tabTool:CreateSection("配件甩飞（强制触碰）")
+
+tabTool:CreateButton("触碰甩飞最近玩家", function()
+    local n = TouchFling(flingRadius)
+    win:Notify("触碰甩飞", n > 0 and "已贴上去触发触碰" or "范围内没人", 2,
+        { Type = n > 0 and "success" or "warning" })
+end)
+
+tabTool:CreateParagraph(
+    "生成高速部件贴到目标身上并强制触发 Touch。\n" ..
+    "纯客户端能做到的最后一种方式，成不成看服务端。", 2)
+
+tabTool:CreateDivider()
 tabTool:CreateSection("Parts 环绕")
 
 tabTool:CreateToggle("启用环绕", false, function(on)
