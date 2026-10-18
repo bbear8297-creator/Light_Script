@@ -302,7 +302,7 @@ function Fly:stop(silent)
     local root, hum = self:root(), self:humanoid()
     pcall(function() self:restorePose() end)
     pcall(function() self:restoreArms() end)
-    pcall(function() self:freezeAnim(false) end)   -- 恢复默认动画
+
     if root then pcall(function() root.Anchored = false end) end
     if hum then
         hum.PlatformStand = false
@@ -327,10 +327,8 @@ function Fly:start()
     hum.PlatformStand = false    -- 保留人形动画，人物不会僵住
     root.Anchored = true         -- 去掉重力、碰撞、所有外力
 
-    -- 等骨骼就绪再冻结动画
-    task.delay(0.15, function()
-        if self.enabled then self:freezeAnim(true) end
-    end)
+    -- 注意：新版 AnimationConstraint 骨架在动画停止后会移除关节，
+    -- 冻结动画 = 人物变成无法摆姿势的静态模型，所以这里不冻结。
 
     self.conn = RunService.Heartbeat:Connect(function(dt)
         if not self.enabled then return end
@@ -397,12 +395,7 @@ function Fly:start()
         local alpha = math.clamp(dt * 8, 0, 1)
         r.CFrame = CFrame.new(newPos) * currentRot:Lerp(target - target.Position, alpha)
 
-        -- 人形状态切换会重播动画，定期再冻结一次
-        self.animTick = (self.animTick or 0) + dt
-        if self.animTick > 0.5 then
-            self.animTick = 0
-            self:freezeAnim(true)
-        end
+
     end)
 
     self.jumpConn = UserInput.JumpRequest:Connect(function()
