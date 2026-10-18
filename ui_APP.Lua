@@ -725,6 +725,33 @@ do
         return finish(it)
     end
 
+    -- 主页：房子
+    IconPainters.home = function(holder)
+        local it = {}
+        part(holder, it, sz(9, 9), px(3.5, 0), UDim.new(0, 2)).Rotation = 45
+        part(holder, it, sz(11, 8), px(2.5, 7), UDim.new(0, 2))
+        return finish(it)
+    end
+
+    -- 移动：四向箭头
+    IconPainters.move = function(holder)
+        local it = {}
+        part(holder, it, sz(4, 4), px(6, 6))
+        part(holder, it, sz(2, 6), px(7, 1), UDim.new(1, 0))
+        part(holder, it, sz(2, 6), px(7, 9), UDim.new(1, 0))
+        part(holder, it, sz(6, 2), px(1, 7), UDim.new(1, 0))
+        part(holder, it, sz(6, 2), px(9, 7), UDim.new(1, 0))
+        return finish(it)
+    end
+
+    -- 闪电：功能
+    IconPainters.bolt = function(holder)
+        local it = {}
+        part(holder, it, sz(6, 8), px(6, 0), UDim.new(0, 2)).Rotation = 18
+        part(holder, it, sz(6, 8), px(4, 8), UDim.new(0, 2)).Rotation = 18
+        return finish(it)
+    end
+
     -- 别名
     IconPainters.gear = IconPainters.settings
     IconPainters.sliders = IconPainters.settings
@@ -1283,6 +1310,10 @@ function Library:CreateWindow(options)
     function Window:ToggleMain() toggleMain() end
     function Window:IsMainOpen() return isMainOpen end
     function Window:IsDestroyed() return destroyed end
+    function Window:GetMainFrame() return MainFrame end
+    function Window:SetMainPosition(pos)
+        if MainFrame and typeof(pos) == "UDim2" then MainFrame.Position = pos end
+    end
 
     function Window:GetIsland() return Island end
     function Window:SetIslandStatus(t) Island.SetStatus(t) end
