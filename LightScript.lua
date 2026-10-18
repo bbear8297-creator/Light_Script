@@ -600,18 +600,16 @@ function Fling(radius, duration)
     local target = nearestTarget(radius or 30)
     if not (char and hum and root and target) then return 0 end
 
-    local dur = tonumber(duration) or 2
+    -- 短促爆发：只维持很短时间，甩完立刻放手，保证人还能走
+    local dur = math.clamp(tonumber(duration) or 0.45, 0.2, 1.2)
     local savedPos = root.CFrame
     local savedFPDH = workspace.FallenPartsDestroyHeight
-
-    local bv = Instance.new("BodyVelocity")
-    bv.Velocity = Vector3.zero
-    bv.MaxForce = Vector3.new(9e9, 9e9, 9e9)
-    bv.Parent = root
 
     pcall(function() workspace.FallenPartsDestroyHeight = 0 / 0 end)
     pcall(function() hum:SetStateEnabled(Enum.HumanoidStateType.Seated, false) end)
 
+    -- 注意：不加 BodyVelocity(0)。它会把角色钉在原地，
+    -- 甩飞那两秒你完全动不了 —— 这就是之前"不能移动"的原因。
     task.spawn(function()
         local t0 = tick()
         local angle = 0
@@ -634,33 +632,28 @@ function Fling(radius, duration)
             end)
             task.wait()
 
-            -- 关键：只让"重叠"发生在一帧内，立刻把自己钉回去
-            if SelfLock.on then SelfLock:snap() end
-            -- 每帧回血：天文速度会被判为撕裂伤害，不补必死
+            -- 自己速度立刻归零（不拉位置，避免被钉死）
+            pcall(function()
+                root.AssemblyLinearVelocity = Vector3.zero
+                root.AssemblyAngularVelocity = Vector3.zero
+            end)
             God:heal()
         end
 
-        pcall(function() bv:Destroy() end)
         pcall(function() hum:SetStateEnabled(Enum.HumanoidStateType.Seated, true) end)
         pcall(function() workspace.FallenPartsDestroyHeight = savedFPDH end)
 
-        -- 复位，别把自己丢在地图外面
+        -- 只把自己挪回原处一点点，不做长时间硬锁
         pcall(function()
-            root.CFrame = savedPos + Vector3.new(0, 3, 0)
-            root.Velocity = Vector3.zero
-            root.RotVelocity = Vector3.zero
+            root.CFrame = savedPos + Vector3.new(0, 2, 0)
+            root.AssemblyLinearVelocity = Vector3.zero
             root.AssemblyAngularVelocity = Vector3.zero
-            hum:ChangeState(Enum.HumanoidStateType.GettingUp)
         end)
-
-        -- 1.5 秒硬锁：把甩飞残留的速度彻底按掉
-        if SelfLock.on then
-            SelfLock:holdFor(savedPos + Vector3.new(0, 3, 0), 1.5)
-        end
     end)
 
     return 1
 end
+
 -- ══════════════════════════════════════════════════════════
 -- 旋转甩飞（漩涡模式）
 --   原理：给自己 RootPart 写巨大的 AssemblyAngularVelocity，让角色高速自转。
@@ -1065,7 +1058,7 @@ tabTool:CreateSlider("作用半径", 5, 100, 25, function(v)
     flingRadius = v
 end)
 
-tabTool:CreateSlider("甩飞时长（秒）", 1, 6, 2, function(v)
+tabTool:CreateSlider("甩飞时长（秒）", 0.2, 1.2, 0.45, function(v)
     flingDuration = v
 end)
 
