@@ -443,14 +443,22 @@ end
 --   2) parts 列表：初始扫描 + DescendantAdded / DescendantRemoving 维护
 --   3) 每帧对每个部件算环形目标点，直接写 part.Velocity 朝目标推
 -- ══════════════════════════════════════════════════════════
+-- ══════════════════════════════════════════════════════════
+-- Parts 环绕（照抄 Super Ring Parts V6）
+--   关键三条（之前全漏了）：
+--     1) 每帧给所有部件灌常量 Velocity → 抢物理所有权
+--     2) 扫全图，不做距离过滤（远处部件靠常驻推力慢慢被拉过来）
+--     3) 参数用原版量级：radius 50 / height 100 / attraction 1000
+-- ══════════════════════════════════════════════════════════
 local Ring = {
     on = false,
-    radius = 8,
-    height = 5,
-    rotationSpeed = 2.5,
-    attraction = 120,
-    maxParts = 60,
-    scanRadius = 150,
+    radius = 50,
+    height = 100,
+    rotationSpeed = 10,
+    attraction = 1000,
+    grabVelocity = Vector3.new(14.46262424, 14.46262424, 14.46262424),
+    maxParts = 200,
+    scanRadius = 99999,     -- 99999 = 不过滤
     conn = nil, addedConn = nil, removedConn = nil,
     parts = {}, hits = 0,
 }
@@ -488,9 +496,17 @@ end
 
 function Ring:scan()
     self.parts = {}
+    local root = Fly:root()
+    local center = root and root.Position or Vector3.zero
+
     for _, d in ipairs(workspace:GetDescendants()) do
         if #self.parts >= self.maxParts then break end
-        if self:retain(d) then self.parts[#self.parts + 1] = d end
+        if self:retain(d) then
+            if self.scanRadius >= 90000
+                or (d.Position - center).Magnitude <= self.scanRadius then
+                self.parts[#self.parts + 1] = d
+            end
+        end
     end
     self.hits = #self.parts
 end
@@ -521,8 +537,14 @@ function Ring:start()
         end
 
         local center = root.Position
+        local h = math.max(self.height, 0.1)
+
         for _, part in ipairs(self.parts) do
             if part and part.Parent and not part.Anchored then
+                -- ① 常驻推力：宣告所有权
+                pcall(function() part.Velocity = self.grabVelocity end)
+
+                -- ② 环形目标点 + 吸力覆盖
                 local pos = part.Position
                 local flat = Vector3.new(pos.X, center.Y, pos.Z) - center
                 local dist = flat.Magnitude
@@ -532,7 +554,7 @@ function Ring:start()
                     local r = math.min(self.radius, math.max(dist, 2))
                     local target = Vector3.new(
                         center.X + math.cos(angle) * r,
-                        center.Y + self.height * math.abs(math.sin((pos.Y - center.Y) / math.max(self.height, 0.1))),
+                        center.Y + self.height * math.abs(math.sin((pos.Y - center.Y) / h)),
                         center.Z + math.sin(angle) * r
                     )
                     local dir = target - pos
@@ -554,7 +576,6 @@ function Ring:stop()
     if self.addedConn then self.addedConn:Disconnect(); self.addedConn = nil end
     if self.removedConn then self.removedConn:Disconnect(); self.removedConn = nil end
 end
-
 function Ring:refresh()
     if self.on then self:scan() end
 end
@@ -710,23 +731,23 @@ tabTool:CreateToggle("启用环绕", false, function(on)
     end
 end)
 
-tabTool:CreateSlider("环绕半径", 2, 30, 8, function(v)
+tabTool:CreateSlider("环绕半径", 5, 120, 50, function(v)
     Ring.radius = v
 end)
 
-tabTool:CreateSlider("环绕高度", 0, 20, 5, function(v)
+tabTool:CreateSlider("环绕高度", 0, 200, 100, function(v)
     Ring.height = v
 end)
 
-tabTool:CreateSlider("旋转速度", 0, 10, 2.5, function(v)
+tabTool:CreateSlider("旋转速度", 0, 30, 10, function(v)
     Ring.rotationSpeed = v
 end)
 
-tabTool:CreateSlider("吸附力度", 20, 500, 120, function(v)
+tabTool:CreateSlider("吸附力度", 100, 3000, 1000, function(v)
     Ring.attraction = v
 end)
 
-tabTool:CreateSlider("最大部件数", 10, 150, 60, function(v)
+tabTool:CreateSlider("最大部件数", 10, 400, 200, function(v)
     Ring.maxParts = math.floor(v)
     Ring:refresh()
 end)
