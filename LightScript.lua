@@ -212,6 +212,7 @@ local win = Library:CreateWindow({ Title = "LightScript", Theme = THEME, CloseBu
 
 local tabHome    = win:CreateTab("主页", "home")
 local tabMove    = win:CreateTab("移动", "move")
+local tabTool    = win:CreateTab("工具", "bolt")
 local tabSetting = win:CreateTab("设置", "settings")
 local tabAbout   = win:CreateTab("关于", "info")
 
@@ -310,13 +311,18 @@ function Fly:start()
 
         local newPos = r.Position + dir * self.speed * dt
 
-        -- 始终直立、背对镜头，镜头俯仰不影响站姿
-        local look = cam and cam.CFrame.LookVector or Vector3.new(0, 0, -1)
-        local flat = Vector3.new(look.X, 0, look.Z)
+        -- 朝向跟着视角：水平方向决定转身，相机俯仰决定身体前后倾
+        local camLook = (cam and cam.CFrame.LookVector) or Vector3.new(0, 0, -1)
+        local flat = Vector3.new(camLook.X, 0, camLook.Z)
         if flat.Magnitude < 0.01 then flat = Vector3.new(0, 0, -1) end
         flat = flat.Unit
 
-        local target = CFrame.lookAt(newPos, newPos + flat)
+        local pitch = math.asin(math.clamp(camLook.Y, -1, 1))     -- 抬头为正
+        pitch = math.clamp(pitch, math.rad(-60), math.rad(60))    -- 别翻过去
+
+        local yawCF = CFrame.lookAt(newPos, newPos + flat)
+        local target = yawCF * CFrame.Angles(pitch, 0, 0)         -- 抬头后仰 / 低头前倾
+
         local curRot = r.CFrame - r.CFrame.Position
         local alpha = math.clamp(dt * 12, 0, 1)
         r.CFrame = CFrame.new(newPos) * curRot:Lerp(target - target.Position, alpha)
@@ -340,7 +346,138 @@ LP.CharacterAdded:Connect(function()
         Fly.enabled = false
         Fly:start()
     end
+    pcall(function() Speed:apply() end)
 end)
+
+-- ══════════════════════════════════════════════════════════
+-- 速度 / 跳跃
+-- ══════════════════════════════════════════════════════════
+local Speed = { walk = 16, jump = 50, on = false }
+
+function Speed:apply()
+    local hum = Fly:humanoid()
+    if not hum then return end
+    hum.WalkSpeed = self.on and self.walk or 16
+    pcall(function()
+        hum.UseJumpPower = true
+        hum.JumpPower = self.on and self.jump or 50
+    end)
+end
+
+-- ══════════════════════════════════════════════════════════
+-- Noclip：逐帧把角色部件的 CanCollide 关掉
+-- ══════════════════════════════════════════════════════════
+local Noclip = { on = false, conn = nil }
+
+function Noclip:start()
+    if self.on then return end
+    self.on = true
+    self.conn = RunService.Stepped:Connect(function()
+        local c = LP.Character
+        if not c then return end
+        for _, d in ipairs(c:GetDescendants()) do
+            if d:IsA("BasePart") and d.CanCollide then
+                d.CanCollide = false
+            end
+        end
+    end)
+end
+
+function Noclip:stop()
+    self.on = false
+    if self.conn then self.conn:Disconnect(); self.conn = nil end
+end
+
+-- ══════════════════════════════════════════════════════════
+-- Fling：给附近玩家的 Root 灌爆速度
+-- ══════════════════════════════════════════════════════════
+function Fling(radius, power)
+    local myRoot = Fly:root()
+    if not myRoot then return 0 end
+    local hit = 0
+    for _, plr in ipairs(Players:GetPlayers()) do
+        if plr ~= LP and plr.Character then
+            local r = plr.Character:FindFirstChild("HumanoidRootPart")
+            if r and (r.Position - myRoot.Position).Magnitude <= radius then
+                pcall(function()
+                    r.AssemblyLinearVelocity = Vector3.new(power, power, power)
+                    r.AssemblyAngularVelocity = Vector3.new(power, power, power)
+                end)
+                hit = hit + 1
+            end
+        end
+    end
+    return hit
+end
+
+-- ══════════════════════════════════════════════════════════
+-- Parts Ring：环绕身边的一圈发光方块
+-- ══════════════════════════════════════════════════════════
+local Ring = {
+    on = false, count = 12, radius = 5, spin = 2,
+    folder = nil, conn = nil, parts = {}, t = 0,
+}
+
+function Ring:build()
+    self:clear()
+    self.folder = Instance.new("Folder")
+    self.folder.Name = "LS_Ring"
+    self.folder.Parent = workspace
+
+    for i = 1, self.count do
+        local p = Instance.new("Part")
+        p.Name = "LS_RingPart"
+        p.Size = Vector3.new(0.8, 0.8, 0.8)
+        p.Material = Enum.Material.Neon
+        p.Color = Color3.fromHSV((i - 1) / self.count, 0.65, 1)
+        p.Anchored = true
+        p.CanCollide = false
+        p.CanQuery = false
+        p.CanTouch = false
+        p.CastShadow = false
+        p.Parent = self.folder
+        self.parts[i] = p
+    end
+end
+
+function Ring:clear()
+    self.parts = {}
+    if self.folder then pcall(function() self.folder:Destroy() end) end
+    self.folder = nil
+end
+
+function Ring:start()
+    if self.on then return end
+    self.on = true
+    self:build()
+
+    self.conn = RunService.Heartbeat:Connect(function(dt)
+        if not self.on then return end
+        local char = LP.Character
+        local root = char and char:FindFirstChild("HumanoidRootPart")
+        if not root or not self.folder then return end
+
+        self.t = self.t + dt * self.spin
+        local n = #self.parts
+        for i, p in ipairs(self.parts) do
+            if p and p.Parent then
+                local a = self.t + (i - 1) * (math.pi * 2 / n)
+                local off = CFrame.Angles(0, a, 0) * CFrame.new(0, math.sin(self.t * 2 + i) * 0.25, -self.radius)
+                p.CFrame = root.CFrame * off
+            end
+        end
+    end)
+end
+
+function Ring:stop()
+    self.on = false
+    if self.conn then self.conn:Disconnect(); self.conn = nil end
+    self:clear()
+end
+
+function Ring:rebuild()
+    if self.on then self:build() end
+end
 
 -- ══════════════════════════════════════════════════════════
 -- 主页
@@ -417,6 +554,88 @@ tabMove:CreateParagraph(
     "推摇杆飞，抬头爬升、低头下降，跳跃键上升。\n" ..
     "飞行中人物保持直立，不会进入下坠状态。", 2)
 
+tabMove:CreateSection("速度与跳跃")
+
+tabMove:CreateToggle("启用速度修改", false, function(on)
+    Speed.on = on
+    Speed:apply()
+end)
+
+tabMove:CreateSlider("行走速度", 16, 300, 16, function(v)
+    Speed.walk = v
+    Speed:apply()
+end)
+
+tabMove:CreateSlider("跳跃力度", 50, 300, 50, function(v)
+    Speed.jump = v
+    Speed:apply()
+end)
+
+-- ══════════════════════════════════════════════════════════
+-- 工具页：Noclip / Fling / Parts Ring
+-- ══════════════════════════════════════════════════════════
+tabTool:CreateSection("穿墙")
+
+tabTool:CreateToggle("启用 Noclip", false, function(on)
+    if on then Noclip:start() else Noclip:stop() end
+end)
+
+tabTool:CreateDivider()
+tabTool:CreateSection("甩飞附近玩家")
+
+local flingRadius = 25
+local flingPower = 3e4
+local autoFlingConn
+
+tabTool:CreateSlider("作用半径", 5, 100, 25, function(v)
+    flingRadius = v
+end)
+
+tabTool:CreateSlider("力度（万）", 1, 100, 3, function(v)
+    flingPower = v * 10000
+end)
+
+tabTool:CreateButton("立即甩飞", function()
+    local n = Fling(flingRadius, flingPower)
+    win:Notify("甩飞", ("范围内命中 %d 人"):format(n), 2, { Type = n > 0 and "success" or "warning" })
+end)
+
+tabTool:CreateToggle("自动甩飞", false, function(on)
+    if autoFlingConn then autoFlingConn:Disconnect(); autoFlingConn = nil end
+    if on then
+        autoFlingConn = RunService.Heartbeat:Connect(function()
+            Fling(flingRadius, flingPower)
+        end)
+        win:SetIslandStatus("自动甩飞中")
+    else
+        win:SetIslandStatus("待机")
+    end
+end)
+
+tabTool:CreateDivider()
+tabTool:CreateSection("Parts 环绕")
+
+tabTool:CreateToggle("启用环绕", false, function(on)
+    if on then Ring:start() else Ring:stop() end
+end)
+
+tabTool:CreateSlider("方块数量", 4, 32, 12, function(v)
+    Ring.count = math.floor(v)
+    Ring:rebuild()
+end)
+
+tabTool:CreateSlider("环绕半径", 2, 15, 5, function(v)
+    Ring.radius = v
+end)
+
+tabTool:CreateSlider("旋转速度", 0, 8, 2, function(v)
+    Ring.spin = v
+end)
+
+tabTool:CreateParagraph(
+    "Noclip 逐帧关闭自身碰撞，可穿过地形。\n" ..
+    "甩飞依赖网络所有权，能否踢飞看对面所在服务器。", 2)
+
 -- ══════════════════════════════════════════════════════════
 -- 设置页
 -- ══════════════════════════════════════════════════════════
@@ -482,6 +701,9 @@ function LightScript:Shutdown()
     if self.closed then return end
     self.closed = true
     pcall(function() Fly:stop(true) end)
+    pcall(function() Noclip:stop() end)
+    pcall(function() Ring:stop() end)
+    if autoFlingConn then pcall(function() autoFlingConn:Disconnect() end) end
     pcall(function() Library:DestroyAll() end)
     pcall(function() boot.Close() end)
     if getgenv then getgenv().LightScript = nil end
