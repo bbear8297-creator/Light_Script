@@ -16,6 +16,14 @@ local Stats            = game:GetService("Stats")
 
 local Library = {}
 
+-- ★ 前向声明：Window:Destroy 里要用，必须早于 CreateWindow 定义
+local AllWindows = {}
+local function forgetWindow(win)
+    for i = #AllWindows, 1, -1 do
+        if AllWindows[i] == win then table.remove(AllWindows, i) end
+    end
+end
+
 -- ═══════════════════════════════════════════════════════════
 -- 常量
 -- ═══════════════════════════════════════════════════════════
@@ -38,30 +46,117 @@ local function Safe(fn, ...)
     if not ok then warn("[LS_UI] " .. tostring(err)) end
 end
 
--- ★ 安全给 Instance 附加方法
+-- ★ math.clamp 在 min > max 时会直接报错，视口过小时会炸
+local function clampSafe(x, lo, hi)
+    if hi < lo then return lo end
+    return math.clamp(x, lo, hi)
+end
+
+-- ═══════════════════════════════════════════════════════════
+-- Instance 方法挂载
+--   rawset(userdata) 在 Roblox 里必定失败（table expected），
+--   inst[name] = fn 对只读属性也必定失败 —— 所以旧版 attachMethod
+--   永远返回 false，CreateLabel / CreateInfoPanel 上的 SetText、
+--   SetServerInfo 全是 nil，一调用就 "attempt to call a nil value"。
+--   正确做法：所有 Instance 共享同一个 metatable，改写它的 __index，
+--   把方法查表插到属性查找之前。
+-- ═══════════════════════════════════════════════════════════
+local MethodRegistry = setmetatable({}, { __mode = "k" })   -- Instance -> { name = fn }
+local instanceIndexHooked = false
+
+local function hookInstanceIndex()
+    if instanceIndexHooked then return true end
+    if type(getrawmetatable) ~= "function" or type(setreadonly) ~= "function" then
+        return false   -- 纯 Roblox 环境（无执行器）：用 Library:Call 兜底
+    end
+    local ok = pcall(function()
+        local mt = getrawmetatable(game)
+        assert(type(mt) == "table", "no instance metatable")
+        local original = mt.__index
+        setreadonly(mt, false)
+        local hook = function(self, key)
+            local store = MethodRegistry[self]
+            if store then
+                local fn = store[key]
+                if fn ~= nil then return fn end
+            end
+            if type(original) == "function" then
+                return original(self, key)
+            elseif type(original) == "table" then
+                return original[key]
+            end
+        end
+        if type(newcclosure) == "function" then hook = newcclosure(hook) end
+        mt.__index = hook
+        setreadonly(mt, true)
+        instanceIndexHooked = true
+    end)
+    return ok and instanceIndexHooked
+end
+
 local function attachMethod(inst, name, fn)
     if not inst or not name or type(fn) ~= "function" then return false end
-    local ok = pcall(function()
-        rawset(inst, name, fn)
-    end)
-    if not ok then
-        -- 极端环境：退回到 instance.name = fn
-        ok = pcall(function()
-            inst[name] = fn
-        end)
+
+    -- 1) 部分执行器的 rawset 支持 Instance
+    if pcall(rawset, inst, name, fn) then
+        local ok, got = pcall(function() return inst[name] end)
+        if ok and got == fn then return true end
     end
-    return ok
+
+    -- 2) 共享 metatable 注入（主路径）
+    local store = MethodRegistry[inst]
+    if not store then
+        store = {}
+        MethodRegistry[inst] = store
+    end
+    store[name] = fn
+
+    if hookInstanceIndex() then return true end
+
+    -- 3) 都不可用：用 Library:Call(inst, name, ...) 调用
+    return false
+end
+
+function Library:Call(inst, name, ...)
+    local store = MethodRegistry[inst]
+    local fn = store and store[name]
+    if type(fn) ~= "function" then return nil end
+    return fn(...)
 end
 
 -- 目标 GUI 层
-local targetGui
-do
-    local ok, res = pcall(function() return gethui and gethui() end)
-    targetGui = (ok and res) or CoreGui
+--   旧逻辑：gethui 不存在 → targetGui = CoreGui，然后只检查了 .Name 能不能读。
+--   Studio / 无 gethui 的执行器里 CoreGui.Name 读得到，但 Parent 赋值会抛
+--   "The current identity cannot modify CoreGui"，UI 一个像素都不出。
+--   现在改成：gethui → 探测 CoreGui 可写 → 退回 PlayerGui。
+local function resolveGuiParent()
+    local ok, hui = pcall(function() return gethui and gethui() end)
+    if ok and typeof(hui) == "Instance" then return hui end
+
+    local coreOk = pcall(function()
+        local probe = Instance.new("ScreenGui")
+        probe.Name = "LS_UI_Probe"
+        probe.Parent = CoreGui
+        probe:Destroy()
+    end)
+    if coreOk then return CoreGui end
+
+    local lp = Players.LocalPlayer
+    if not lp then
+        local waited = 0
+        while not lp and waited < 10 do
+            task.wait(0.1)
+            waited = waited + 0.1
+            lp = Players.LocalPlayer
+        end
+    end
+    if not lp then
+        lp = Players:WaitForChild("LocalPlayer", 10)   -- 极端兜底
+    end
+    return lp:WaitForChild("PlayerGui")
 end
-if not pcall(function() return targetGui.Name end) then
-    targetGui = Players.LocalPlayer:WaitForChild("PlayerGui")
-end
+
+local targetGui = resolveGuiParent()
 
 -- ═══════════════════════════════════════════════════════════
 -- Blur 控制器
@@ -174,47 +269,58 @@ Library.Themes = {
 }
 
 -- ═══════════════════════════════════════════════════════════
--- 功能计数器
+-- 功能计数器（每个 Window 一份）
+--   旧版是模块级单例：窗口 A 注册的 toggle 会算进窗口 B 的灵动岛，
+--   窗口销毁后计数也不归零。现在改成工厂函数。
 -- ═══════════════════════════════════════════════════════════
-local FeatureCounter = {}
-do
+local function createFeatureCounter()
+    local self = {}
     local features, listeners, counter = {}, {}, 0
 
-    function FeatureCounter.Register(name)
+    function self.Register(name)
         counter = counter + 1
         local id = "feat_" .. counter
         features[id] = { name = name or ("功能 " .. counter), active = false }
         return id
     end
 
-    function FeatureCounter.SetActive(id, active)
+    function self.SetActive(id, active)
         if not features[id] then return end
         if features[id].active == active then return end
         features[id].active = active
-        FeatureCounter.Notify()
+        self.Notify()
     end
 
-    function FeatureCounter.Count()
+    function self.Count()
         local n = 0
         for _, f in pairs(features) do if f.active then n = n + 1 end end
         return n
     end
 
-    function FeatureCounter.Notify()
-        local count = FeatureCounter.Count()
+    function self.Notify()
+        local count = self.Count()
         for _, fn in ipairs(listeners) do pcall(fn, count) end
     end
 
-    function FeatureCounter.Subscribe(fn)
+    function self.Subscribe(fn)
         table.insert(listeners, fn)
-        pcall(fn, FeatureCounter.Count())
+        pcall(fn, self.Count())
         return function()
             for i, f in ipairs(listeners) do
                 if f == fn then table.remove(listeners, i); return end
             end
         end
     end
+
+    function self.Clear()
+        features, listeners, counter = {}, {}, 0
+    end
+
+    return self
 end
+
+-- 兼容：Library.Features 保留一个全局实例给外部调用
+Library.Features = createFeatureCounter()
 
 -- ═══════════════════════════════════════════════════════════
 -- 灵动岛
@@ -455,6 +561,7 @@ function Library:CreateWindow(options)
     loadTheme(initialTheme)
 
     local blurCtrl = createBlurController()
+    local FeatureCounter = createFeatureCounter()   -- ★ 每个窗口独立计数
 
     local ScreenGui = Instance.new("ScreenGui")
     ScreenGui.Name = "LS_UI_" .. tostring(math.random(100000, 999999))
@@ -533,6 +640,7 @@ function Library:CreateWindow(options)
 
     local MainFrame, MainScale, Island
     local isMainOpen, isMainAnimating = false, false
+    local destroyed = false
 
     local function showMain()
         if isMainOpen or isMainAnimating then return end
@@ -748,8 +856,18 @@ function Library:CreateWindow(options)
         notif.Size = UDim2.new(1, 0, 0, 70)
         notif.ZIndex = 401
         notif.LayoutOrder = notifOrder
+        notif.ClipsDescendants = true
         notif.Parent = NotifContainer
         Glass.Apply(notif, { Level = "Panel", Radius = 16 })
+
+        -- ★ 修复：UIListLayout 会接管子物体 Position，直接对 notif 补间 Position 无效。
+        --   改成一个内层 body，滑动动画作用在 body 上。
+        local body = Instance.new("Frame")
+        body.Size = UDim2.new(1, 0, 1, 0)
+        body.BackgroundTransparency = 1
+        body.Position = UDim2.new(1, 40, 0, 0)
+        body.ZIndex = 402
+        body.Parent = notif
 
         local barColor = Theme.Accent
         if kind == "success" then barColor = Theme.Success
@@ -761,8 +879,8 @@ function Library:CreateWindow(options)
         bar.Position = UDim2.new(0, 10, 0, 10)
         bar.BackgroundColor3 = barColor
         bar.BorderSizePixel = 0
-        bar.ZIndex = 3
-        bar.Parent = notif
+        bar.ZIndex = 403
+        bar.Parent = body
         do
             local c = Instance.new("UICorner")
             c.CornerRadius = UDim.new(1, 0)
@@ -778,8 +896,8 @@ function Library:CreateWindow(options)
         titleLbl.Font = Enum.Font.GothamBold
         titleLbl.TextSize = 14
         titleLbl.TextXAlignment = Enum.TextXAlignment.Left
-        titleLbl.ZIndex = 3
-        titleLbl.Parent = notif
+        titleLbl.ZIndex = 403
+        titleLbl.Parent = body
 
         local msgLbl = Instance.new("TextLabel")
         msgLbl.Size = UDim2.new(1, -28, 0, 0)
@@ -791,8 +909,8 @@ function Library:CreateWindow(options)
         msgLbl.TextSize = 12
         msgLbl.TextXAlignment = Enum.TextXAlignment.Left
         msgLbl.TextWrapped = true
-        msgLbl.ZIndex = 3
-        msgLbl.Parent = notif
+        msgLbl.ZIndex = 403
+        msgLbl.Parent = body
 
         local textH = TextService:GetTextSize(message, 12, Enum.Font.Gotham,
             Vector2.new(252, 2000)).Y
@@ -803,15 +921,14 @@ function Library:CreateWindow(options)
         local sc = Instance.new("UIScale")
         sc.Scale = 0.85
         sc.Parent = notif
-        notif.Position = UDim2.new(1, 40, 0, 0)
-        TweenService:Create(notif, TweenInfo.new(0.4, Enum.EasingStyle.Quart, Enum.EasingDirection.Out),
+        TweenService:Create(body, TweenInfo.new(0.4, Enum.EasingStyle.Quart, Enum.EasingDirection.Out),
             { Position = UDim2.new(0, 0, 0, 0) }):Play()
         TweenService:Create(sc, TweenInfo.new(0.4, Enum.EasingStyle.Back, Enum.EasingDirection.Out),
             { Scale = 1 }):Play()
 
         task.delay(duration, function()
             if not notif.Parent then return end
-            TweenService:Create(notif, TweenInfo.new(0.3, Enum.EasingStyle.Quart, Enum.EasingDirection.In),
+            TweenService:Create(body, TweenInfo.new(0.3, Enum.EasingStyle.Quart, Enum.EasingDirection.In),
                 { Position = UDim2.new(1, 40, 0, 0) }):Play()
             TweenService:Create(sc, TweenInfo.new(0.3), { Scale = 0.85 }):Play()
             task.wait(0.32)
@@ -863,6 +980,7 @@ function Library:CreateWindow(options)
     function Window:HideMain() hideMain() end
     function Window:ToggleMain() toggleMain() end
     function Window:IsMainOpen() return isMainOpen end
+    function Window:IsDestroyed() return destroyed end
 
     function Window:GetIsland() return Island end
     function Window:SetIslandStatus(t) Island.SetStatus(t) end
@@ -1245,6 +1363,11 @@ function Library:CreateWindow(options)
             end
             track.MouseButton1Click:Connect(fire)
 
+            -- 附加到 Frame 上，两种拿法都能用：obj:Set() / obj.Frame:Set()
+            attachMethod(frame, "Set", function(v) if toggled ~= v then fire() end end)
+            attachMethod(frame, "Get", function() return toggled end)
+            attachMethod(frame, "GetFeatureId", function() return featureId end)
+
             return {
                 Frame = frame,
                 Set = function(v) if toggled ~= v then fire() end end,
@@ -1298,7 +1421,10 @@ function Library:CreateWindow(options)
                 c.Parent = barBg
             end
 
-            local defaultScale = (default - min) / (max - min)
+            local span = (max - min)
+            if span == 0 then span = 1 end
+            local defaultScale = clampSafe((default - min) / span, 0, 1)
+            local currentValue = default
             local barFill = Instance.new("Frame")
             barFill.Size = UDim2.new(defaultScale, 0, 1, 0)
             barFill.BackgroundColor3 = Theme.Accent
@@ -1338,17 +1464,21 @@ function Library:CreateWindow(options)
             end)
 
             local hit = Instance.new("TextButton")
+            -- ★ 修复：原来 hit 挂在 6px 的 barBg 上，鼠标几乎点不中。
+            --   改成覆盖整行。
             hit.Size = UDim2.new(1, 0, 1, 0)
             hit.BackgroundTransparency = 1
             hit.Text = ""
             hit.ZIndex = 7
-            hit.Parent = barBg
+            hit.Parent = frame
 
             local dragging = false
             local function update(input)
                 local rel = math.clamp(input.Position.X - barBg.AbsolutePosition.X, 0, barBg.AbsoluteSize.X)
-                local sc = rel / barBg.AbsoluteSize.X
-                local value = math.floor(min + (max - min) * sc)
+                local sc = rel / math.max(barBg.AbsoluteSize.X, 1)
+                local value = math.floor(min + span * sc + 0.5)
+                if value < min then value = min elseif value > max then value = max end
+                currentValue = value
                 TweenService:Create(barFill, TweenInfo.new(0.08), { Size = UDim2.new(sc, 0, 1, 0) }):Play()
                 TweenService:Create(knob, TweenInfo.new(0.08), { Position = UDim2.new(sc, 0, 0.5, 0) }):Play()
                 valueLbl.Text = tostring(value)
@@ -1373,6 +1503,16 @@ function Library:CreateWindow(options)
                     update(input)
                 end
             end))
+            attachMethod(frame, "Set", function(v)
+                v = math.clamp(v, min, max)
+                currentValue = v
+                local sc = (v - min) / span
+                barFill.Size = UDim2.new(sc, 0, 1, 0)
+                knob.Position = UDim2.new(sc, 0, 0.5, 0)
+                valueLbl.Text = tostring(math.floor(v + 0.5))
+                Safe(callback, v)
+            end)
+            attachMethod(frame, "Get", function() return currentValue end)
             return frame
         end
 
@@ -1521,6 +1661,20 @@ function Library:CreateWindow(options)
                 local conn = Overlay.MouseButton1Click:Connect(closeDropdown)
                 currentDropdown.conn = conn
             end)
+
+            attachMethod(frame, "Set", function(v)
+                for _, o in ipairs(options) do
+                    if o == v then
+                        selected = o
+                        dropBtn.Text = o
+                        Safe(callback, o)
+                        return true
+                    end
+                end
+                return false
+            end)
+            attachMethod(frame, "Get", function() return selected end)
+            attachMethod(frame, "GetOptions", function() return options end)
             return frame
         end
 
@@ -1599,6 +1753,7 @@ function Library:CreateWindow(options)
 
         function Elements:CreateProgressBar(text, default)
             local val = math.clamp(default or 0, 0, 1)
+            local currentProgress = val
             local frame = Instance.new("Frame")
             frame.Size = UDim2.new(1, 0, 0, 48)
             frame.ZIndex = 3
@@ -1662,13 +1817,16 @@ function Library:CreateWindow(options)
             end)
 
             return {
+                Frame = frame,
                 Set = function(v)
                     v = math.clamp(v, 0, 1)
+                    currentProgress = v
                     TweenService:Create(barFill,
                         TweenInfo.new(0.3, Enum.EasingStyle.Quart, Enum.EasingDirection.Out),
                         { Size = UDim2.new(v, 0, 1, 0) }):Play()
                     pct.Text = math.floor(v * 100) .. "%"
                 end,
+                Get = function() return currentProgress end,
             }
         end
 
@@ -1848,9 +2006,9 @@ function Library:CreateWindow(options)
                 local ap = prev.AbsolutePosition
                 local asz = prev.AbsoluteSize
                 popup.Position = UDim2.new(0,
-                    math.clamp(ap.X - 170, 10, ScreenGui.AbsoluteSize.X - 258),
+                    clampSafe(ap.X - 170, 10, ScreenGui.AbsoluteSize.X - 258),
                     0,
-                    math.clamp(ap.Y + asz.Y + 8, 10, ScreenGui.AbsoluteSize.Y - 258))
+                    clampSafe(ap.Y + asz.Y + 8, 10, ScreenGui.AbsoluteSize.Y - 258))
 
                 local bar = Instance.new("TextButton")
                 bar.Size = UDim2.new(1, 0, 0, 22)
@@ -2158,6 +2316,8 @@ function Library:CreateWindow(options)
 
             bindBtn.MouseButton1Click:Connect(startListening)
             bindKey(currentKey)
+            attachMethod(frame, "Set", function(key) if key then bindKey(key) end end)
+            attachMethod(frame, "Get", function() return currentKey end)
             return frame
         end
 
@@ -2188,13 +2348,6 @@ function Library:CreateWindow(options)
         return Elements
     end
 
-    -- ★ 新增：清理外部函数
-    function Window:AddCleanup(fn)
-        if type(fn) == "function" then
-            table.insert(cleanupStack, fn)
-        end
-    end
-
     function Window:Destroy()
         isMainOpen, isMainAnimating = false, false
         closeDropdown()
@@ -2209,20 +2362,28 @@ function Library:CreateWindow(options)
         end
         cleanupStack = {}
 
-        if islandUnsub then islandUnsub() end
+        if islandUnsub then islandUnsub(); islandUnsub = nil end
         blurCtrl.Destroy()
         if Island then Island.Destroy() end
         if ScreenGui then ScreenGui:Destroy() end
+
+        -- ★ 修复：从全局窗口表里摘掉，并清空本窗口计数器
+        FeatureCounter.Clear()
+        forgetWindow(self)
+        destroyed = true
     end
 
     return Window
 end
 
--- ★ 新增：全局清理
-local AllWindows = setmetatable({}, { __mode = "v" })
-
+-- ★ 全局清理
+--   旧版：AllWindows 是 __mode="v" 弱表，还用 #AllWindows+1 递增下标。
+--   弱值 → Window 表随时被 GC；# 遇空洞 → 新窗口覆盖旧下标。
+--   结果就是 DestroyAll 一半窗口漏掉，ScreenGui 留在 CoreGui 上关不掉。
 function Library:DestroyAll()
-    for _, win in pairs(AllWindows) do
+    for i = #AllWindows, 1, -1 do
+        local win = AllWindows[i]
+        AllWindows[i] = nil
         if win and type(win.Destroy) == "function" then
             pcall(function() win:Destroy() end)
         end
@@ -2235,11 +2396,17 @@ function Library:DestroyAll()
     end
 end
 
+function Library:GetWindows()
+    local copy = {}
+    for i, w in ipairs(AllWindows) do copy[i] = w end
+    return copy
+end
+
 -- 包装 CreateWindow，记录实例
 local _origCreateWindow = Library.CreateWindow
 Library.CreateWindow = function(self, ...)
     local win = _origCreateWindow(self, ...)
-    AllWindows[#AllWindows + 1] = win
+    if win then table.insert(AllWindows, win) end
     return win
 end
 
