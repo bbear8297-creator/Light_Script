@@ -2450,6 +2450,8 @@ function Library:CreateWindow(options)
     end
 
     function Window:Destroy()
+        if destroyed then return end          -- ★ 幂等：重复销毁直接返回
+        destroyed = true
         isMainOpen, isMainAnimating = false, false
         closeDropdown()
         disconnectAll()
@@ -2471,7 +2473,6 @@ function Library:CreateWindow(options)
         -- ★ 修复：从全局窗口表里摘掉，并清空本窗口计数器
         FeatureCounter.Clear()
         forgetWindow(self)
-        destroyed = true
     end
 
     return Window
@@ -2482,9 +2483,13 @@ end
 --   弱值 → Window 表随时被 GC；# 遇空洞 → 新窗口覆盖旧下标。
 --   结果就是 DestroyAll 一半窗口漏掉，ScreenGui 留在 CoreGui 上关不掉。
 function Library:DestroyAll()
+    -- ★ 先快照再清表，避免销毁过程中 forgetWindow 改动数组导致漏窗
+    local snapshot = {}
     for i = #AllWindows, 1, -1 do
-        local win = AllWindows[i]
+        snapshot[#snapshot + 1] = AllWindows[i]
         AllWindows[i] = nil
+    end
+    for _, win in ipairs(snapshot) do
         if win and type(win.Destroy) == "function" then
             pcall(function() win:Destroy() end)
         end
