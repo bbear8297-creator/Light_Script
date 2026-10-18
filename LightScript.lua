@@ -261,9 +261,14 @@ end
 -- ══════════════════════════════════════════════════════════
 -- 4. 移动模块 · 飞行
 -- ══════════════════════════════════════════════════════════
--- 手机端没有 WASD：用 Humanoid.MoveDirection（摇杆与键盘统一的"世界坐标输入"）
--- 相机俯仰决定垂直分量，跳跃键短按给向上冲量。
-local Fly = { enabled = false, speed = 65, conn = nil, bv = nil, bg = nil, jumpConn = nil, upTicks = 0 }
+-- 纯位移飞行：锚定 RootPart 去掉全部外力，每帧按摇杆 + 相机俯仰改 CFrame
+local Fly = {
+    enabled = false,
+    speed = 65,
+    conn = nil,
+    jumpConn = nil,
+    upTicks = 0,
+}
 
 function Fly:root()
     local char = LP.Character
@@ -275,15 +280,28 @@ function Fly:humanoid()
     return char and char:FindFirstChildOfClass("Humanoid")
 end
 
+-- 摇杆向量：PlayerModule 的 GetMoveVector 不受锚定/物理影响
+function Fly:moveVector()
+    local ok, mv = pcall(function()
+        local ps = LP:FindFirstChild("PlayerScripts")
+        local pm = ps and ps:FindFirstChild("PlayerModule")
+        if not pm then return nil end
+        return require(pm):GetControls():GetMoveVector()
+    end)
+    if ok and typeof(mv) == "Vector3" then return mv end
+    local h = self:humanoid()
+    return (h and h.MoveDirection) or Vector3.zero
+end
+
 function Fly:stop(silent)
     self.enabled = false
     if self.conn then self.conn:Disconnect(); self.conn = nil end
     if self.jumpConn then self.jumpConn:Disconnect(); self.jumpConn = nil end
-    if self.bv then pcall(function() self.bv:Destroy() end); self.bv = nil end
-    if self.bg then pcall(function() self.bg:Destroy() end); self.bg = nil end
     self.upTicks = 0
-    local hum = self:humanoid()
+    local root, hum = self:root(), self:humanoid()
+    if root then pcall(function() root.Anchored = false end) end
     if hum then
+        hum.PlatformStand = false
         pcall(function() hum:ChangeState(Enum.HumanoidStateType.GettingUp) end)
     end
     if not silent then win:SetIslandStatus("待机") end
@@ -299,58 +317,51 @@ function Fly:start()
 
     self.enabled = true
     self.upTicks = 0
+    hum.PlatformStand = false    -- 保留人形动画，人物不会僵住
+    root.Anchored = true         -- 去掉重力、碰撞、所有外力
 
-    -- 速度驱动
-    local bv = Instance.new("BodyVelocity")
-    bv.Name = "LS_Fly"
-    bv.MaxForce = Vector3.new(9e9, 9e9, 9e9)
-    bv.P = 1250
-    bv.Velocity = Vector3.new(0, 32, 0)     -- 起飞冲量
-    bv.Parent = root
-    self.bv = bv
-
-    -- 姿态驱动：跟相机对齐，避免角色翻滚
-    local bg = Instance.new("BodyGyro")
-    bg.Name = "LS_FlyGyro"
-    bg.MaxTorque = Vector3.new(9e9, 9e9, 9e9)
-    bg.P = 3000
-    bg.D = 500
-    bg.CFrame = root.CFrame
-    bg.Parent = root
-    self.bg = bg
-
-    self.conn = RunService.Heartbeat:Connect(function()
+    self.conn = RunService.Heartbeat:Connect(function(dt)
         if not self.enabled then return end
         local r = self:root()
         if not r then self:stop(true); return end
+        -- 角色重生/换模型后 Anchored 会丢，每帧兜底，避免重力把人往下拽
+        if not r.Anchored then r.Anchored = true end
 
-        local h = self:humanoid()
-        local md = (h and h.MoveDirection) or Vector3.zero
         local cam = workspace.CurrentCamera
-
-        -- MoveDirection 永远是水平的世界坐标；用相机把它还原成 3D 方向，
-        -- 这样"抬头 + 前推"就自然爬升，"低头 + 前推"下降。
+        local mv = self:moveVector()
         local dir = Vector3.zero
+
         if cam then
-            if md.Magnitude > 0.05 then
-                local rel = cam.CFrame:VectorToObjectSpace(md)
-                dir = cam.CFrame.LookVector * rel.Z + cam.CFrame.RightVector * rel.X
-            end
-            if self.bg then self.bg.CFrame = cam.CFrame end
-        else
-            dir = md
+            -- mv: X = 左右, Z = 前后（相机空间，前推为负）
+            dir = cam.CFrame.LookVector * (-mv.Z) + cam.CFrame.RightVector * mv.X
         end
 
-        local vel = dir * self.speed
         if self.upTicks > 0 then
-            vel = vel + Vector3.new(0, self.speed, 0)
+            dir = dir + Vector3.yAxis
             self.upTicks = self.upTicks - 1
         end
 
-        if self.bv then self.bv.Velocity = vel end
+        local mag = dir.Magnitude
+        if mag > 1 then dir = dir / mag end
+
+        -- 位移
+        local newPos = r.Position + dir * self.speed * dt
+
+        -- 朝向：让角色正面与相机同向 → 背部永远对着镜头
+        local currentRot = r.CFrame - r.CFrame.Position
+        local targetRot = cam and CFrame.lookAt(Vector3.zero, cam.CFrame.LookVector) or currentRot
+        local alpha = math.clamp(dt * 14, 0, 1)          -- 平滑转身，不生硬
+        local newRot = currentRot:Lerp(targetRot, alpha)
+
+        r.CFrame = CFrame.new(newPos) * newRot
+
+        -- 让动画保持在"空中"状态，避免落地待机姿势
+        local h = self:humanoid()
+        if h and h.FloorMaterial ~= Enum.Material.Air then
+            pcall(function() h:ChangeState(Enum.HumanoidStateType.Freefall) end)
+        end
     end)
 
-    -- 手机跳跃键 / PC 空格 → 上升脉冲
     self.jumpConn = UserInput.JumpRequest:Connect(function()
         if self.enabled then self.upTicks = 9 end
     end)
@@ -436,7 +447,7 @@ toggleFly = tabMove:CreateToggle("启用飞行", false, function(on)
         if not Fly:start() then
             toggleFly:Set(false)
         else
-            win:Notify("飞行", "WASD 移动 · 空格上升 · Shift 下降", 3, { Type = "success" })
+            win:Notify("飞行", "推摇杆飞 · 抬头爬升 · 低头下降 · 跳键上升", 3, { Type = "success" })
         end
     else
         Fly:stop()

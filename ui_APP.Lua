@@ -943,19 +943,21 @@ function Library:CreateWindow(options)
         isMainOpen, isMainAnimating = true, true
         MainFrame.Visible = true
 
-        -- ★ 首次打开走开场动画（可用 CreateWindow{ Intro = false } 关闭）
         if not introPlayed and options.Intro ~= false and playIntro then
             introPlayed = true
             playIntro()
             return
         end
 
-        MainScale.Scale = 0
-        local t = TweenService:Create(MainScale,
-            TweenInfo.new(0.45, Enum.EasingStyle.Back, Enum.EasingDirection.Out),
+        -- 再次打开：纯渐显，无弹跳
+        blurCtrl.SetOn(true)
+        MainFrame.GroupTransparency = 1
+        MainScale.Scale = 0.985
+        TweenService:Create(MainFrame, TweenInfo.new(0.36, Enum.EasingStyle.Sine, Enum.EasingDirection.Out),
+            { GroupTransparency = 0 }):Play()
+        local t = TweenService:Create(MainScale, TweenInfo.new(0.42, Enum.EasingStyle.Quint, Enum.EasingDirection.Out),
             { Scale = 1 })
         t:Play()
-        blurCtrl.SetOn(true)
         t.Completed:Connect(function() isMainAnimating = false end)
     end
 
@@ -964,12 +966,16 @@ function Library:CreateWindow(options)
         if not isMainOpen or isMainAnimating then return end
         isMainOpen, isMainAnimating = false, true
         blurCtrl.SetOn(false)
-        local t = TweenService:Create(MainScale,
-            TweenInfo.new(0.3, Enum.EasingStyle.Quart, Enum.EasingDirection.In),
-            { Scale = 0 })
+        TweenService:Create(MainFrame, TweenInfo.new(0.24, Enum.EasingStyle.Sine, Enum.EasingDirection.In),
+            { GroupTransparency = 1 }):Play()
+        local t = TweenService:Create(MainScale, TweenInfo.new(0.26, Enum.EasingStyle.Quint, Enum.EasingDirection.In),
+            { Scale = 0.985 })
         t:Play()
         t.Completed:Connect(function()
-            if not isMainOpen then MainFrame.Visible = false end
+            if not isMainOpen then
+                MainFrame.Visible = false
+                MainFrame.GroupTransparency = 0
+            end
             isMainAnimating = false
         end)
     end
@@ -992,11 +998,13 @@ function Library:CreateWindow(options)
         end
     end)
 
-    MainFrame = Instance.new("Frame")
+    -- CanvasGroup：整窗透明度可一次性做渐显（Frame 做不到）
+    MainFrame = Instance.new("CanvasGroup")
     MainFrame.AnchorPoint = Vector2.new(0.5, 0.5)
     MainFrame.Position = UDim2.new(0.5, 0, 0.55, 0)
     MainFrame.Size = UDim2.new(0.92, 0, 0.78, 0)
     MainFrame.ClipsDescendants = true
+    MainFrame.GroupTransparency = 0
     MainFrame.Visible = false
     MainFrame.ZIndex = 100
     MainFrame.Parent = ScreenGui
@@ -2718,38 +2726,31 @@ function Library:CreateWindow(options)
     ------------------------------------------------------------------
     local introConn
 
+    -- 开场：渐显 + 轻微上浮，全程 Sine/Quint Out，无弹跳无旋转
     function playIntro()
         local basePos = MainFrame.Position
-        local baseRot = MainFrame.Rotation
 
-        -- 压暗层
-        local dim = Instance.new("Frame")
-        dim.Name = "LS_IntroDim"
-        dim.Size = UDim2.new(1, 0, 1, 0)
-        dim.BackgroundColor3 = Color3.fromRGB(7, 7, 10)
-        dim.BackgroundTransparency = 0.12
-        dim.BorderSizePixel = 0
-        dim.ZIndex = 950
-        dim.Parent = ScreenGui
-
-        -- 起始态：下沉 56px、-4°、缩到 0.86
-        MainFrame.Position = UDim2.new(basePos.X.Scale, basePos.X.Offset,
-            basePos.Y.Scale, basePos.Y.Offset + 56)
-        MainFrame.Rotation = baseRot - 4
-        MainScale.Scale = 0.86
-
-        -- Tab 起始态（UIScale 做，UIListLayout 会顶掉 Position）
-        for _, d in ipairs(Tabs) do
-            if d.Scale then d.Scale.Scale = 0.72 end
-        end
-
-        -- 内容区起始态
         local contentScale = ContentContainer:FindFirstChildOfClass("UIScale")
         if not contentScale then
             contentScale = Instance.new("UIScale")
             contentScale.Parent = ContentContainer
         end
-        contentScale.Scale = 0.94
+
+        -- 压暗层
+        local dim = Instance.new("Frame")
+        dim.Name = "LS_IntroDim"
+        dim.Size = UDim2.new(1, 0, 1, 0)
+        dim.BackgroundColor3 = Color3.fromRGB(6, 6, 9)
+        dim.BackgroundTransparency = 0.45
+        dim.BorderSizePixel = 0
+        dim.ZIndex = 950
+        dim.Parent = ScreenGui
+
+        -- 起始态：全透明、0.972、下沉 18px
+        MainFrame.GroupTransparency = 1
+        MainScale.Scale = 0.972
+        MainFrame.Position = UDim2.new(basePos.X.Scale, basePos.X.Offset,
+            basePos.Y.Scale, basePos.Y.Offset + 18)
 
         blurCtrl.SetOn(true)
 
@@ -2757,47 +2758,39 @@ function Library:CreateWindow(options)
         local function at(t, fn) timeline[#timeline + 1] = { t = t, fn = fn } end
 
         at(0.00, function()
-            TweenService:Create(dim, TweenInfo.new(0.50, Enum.EasingStyle.Quad),
+            TweenService:Create(dim, TweenInfo.new(0.62, Enum.EasingStyle.Sine),
                 { BackgroundTransparency = 1 }):Play()
             TweenService:Create(MainFrame,
-                TweenInfo.new(0.62, Enum.EasingStyle.Quint, Enum.EasingDirection.Out),
-                { Position = basePos, Rotation = baseRot }):Play()
+                TweenInfo.new(0.55, Enum.EasingStyle.Sine, Enum.EasingDirection.Out),
+                { GroupTransparency = 0 }):Play()
             TweenService:Create(MainScale,
-                TweenInfo.new(0.62, Enum.EasingStyle.Back, Enum.EasingDirection.Out),
+                TweenInfo.new(0.72, Enum.EasingStyle.Quint, Enum.EasingDirection.Out),
                 { Scale = 1 }):Play()
+            TweenService:Create(MainFrame,
+                TweenInfo.new(0.72, Enum.EasingStyle.Quint, Enum.EasingDirection.Out),
+                { Position = basePos }):Play()
         end)
 
-        for i, d in ipairs(Tabs) do
-            at(0.10 + (i - 1) * 0.045, function()
-                if d.Scale then
-                    TweenService:Create(d.Scale,
-                        TweenInfo.new(0.34, Enum.EasingStyle.Back, Enum.EasingDirection.Out),
-                        { Scale = 1 }):Play()
-                end
-            end)
-        end
-
-        local contentAt = 0.10 + #Tabs * 0.045 + 0.06
-        at(contentAt, function()
+        at(0.12, function()
+            contentScale.Scale = 0.99
             TweenService:Create(contentScale,
-                TweenInfo.new(0.45, Enum.EasingStyle.Quart, Enum.EasingDirection.Out),
+                TweenInfo.new(0.70, Enum.EasingStyle.Quint, Enum.EasingDirection.Out),
                 { Scale = 1 }):Play()
         end)
 
-        at(0.16, function()
+        at(0.30, function()
             if Island and Island.Frame then
                 local s = Island.Frame:FindFirstChildOfClass("UIScale")
                 if s then
-                    s.Scale = 1.18
+                    s.Scale = 1.06
                     TweenService:Create(s,
-                        TweenInfo.new(0.50, Enum.EasingStyle.Back, Enum.EasingDirection.Out),
+                        TweenInfo.new(0.62, Enum.EasingStyle.Sine, Enum.EasingDirection.Out),
                         { Scale = 1 }):Play()
                 end
             end
         end)
 
-        local total = contentAt + 0.55
-        at(total, function()
+        at(0.88, function()
             pcall(function() dim:Destroy() end)
             isMainAnimating = false
         end)

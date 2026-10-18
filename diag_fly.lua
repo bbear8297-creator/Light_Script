@@ -1,47 +1,38 @@
--- 飞行实测：开启飞行后记录 MoveDirection 与角色坐标
+-- 朝向 + 位移实测：dot(角色Look, 相机Look) 应接近 1 表示背部朝镜头
 local OUT = {}
 local function log(s)
     OUT[#OUT + 1] = s
-    if writefile then pcall(writefile, "ls_fly.txt", table.concat(OUT, "\n")) end
+    if writefile then pcall(writefile, "ls_fly3.txt", table.concat(OUT, "\n")) end
 end
 
 local Players = game:GetService("Players")
 local LP = Players.LocalPlayer
-
 local function hrp()
     local c = LP.Character
     return c and c:FindFirstChild("HumanoidRootPart")
 end
-local function hum()
-    local c = LP.Character
-    return c and c:FindFirstChildOfClass("Humanoid")
-end
 
-log("=== fly test ===")
+log("=== fly rot test ===")
 local LS = getgenv and getgenv().LightScript
-log("LightScript = " .. tostring(LS))
-if not LS or not LS.Fly then
-    log("!! 没有暴露 Fly")
-    return
-end
-
+if not LS or not LS.Fly then log("!! 没有 Fly"); return end
 local ok, err = pcall(function() return LS.Fly:start() end)
-log("start fly = " .. tostring(ok) .. " " .. tostring(err))
-log("enabled = " .. tostring(LS.Fly.enabled))
+log("start = " .. tostring(ok) .. " " .. tostring(err))
+task.wait(0.4)
 
-task.wait(0.8)
-local p0 = hrp() and hrp().Position
-log("基线位置 = " .. tostring(p0))
-
-for i = 1, 14 do
-    local r, h = hrp(), hum()
-    local md = h and h.MoveDirection or Vector3.zero
-    log(string.format("t=%.1fs  pos=(%.1f, %.1f, %.1f)  md=(%.2f, %.2f, %.2f)  bv=%s",
+for i = 1, 16 do
+    local r = hrp()
+    local cam = workspace.CurrentCamera
+    local dot = "?"
+    if r and cam then
+        dot = string.format("%.2f", r.CFrame.LookVector:Dot(cam.CFrame.LookVector))
+    end
+    local mv = LS.Fly:moveVector()
+    log(string.format("t=%.1f pos=(%.1f,%.1f,%.1f) mv=(%.2f,%.2f) dot=%s",
         i * 0.5,
         r and r.Position.X or 0, r and r.Position.Y or 0, r and r.Position.Z or 0,
-        md.X, md.Y, md.Z,
-        tostring(LS.Fly.bv and LS.Fly.bv.Velocity)))
+        mv.X, mv.Z, dot))
     task.wait(0.5)
 end
 
+LS.Fly:stop(true)
 log("=== end ===")
