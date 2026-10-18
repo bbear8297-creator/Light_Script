@@ -87,7 +87,8 @@ local function callMethod(obj, method, arg)
         if pcall(fn, obj, arg) then return true end     -- obj:Method(arg)
     end
     if type(Library.Call) == "function" then
-        return (pcall(function() Library:Call(obj, method, arg) end))
+        -- 注意：Library:Call 是冒号方法，点调用时第一个参数就是 inst
+        return (pcall(function() Library.Call(obj, method, arg) end))
     end
     return false
 end
@@ -343,10 +344,11 @@ guard("Button", function()
 end)
 
 -- ───────────────────────────────────────────── 触发一次初始回调
-if hasFn(sliderFov, "Set") then sliderFov:Set(90) end
-if hasFn(sliderSmooth, "Set") then sliderSmooth:Set(35) end
-if hasFn(bindToggle, "Set") then bindToggle:Set(Enum.KeyCode.RightShift) end
-if hasFn(dropMode, "Set") then dropMode:Set("头部") end
-if hasFn(toggleEsp and toggleEsp.Frame, "Set") then toggleEsp.Frame:Set(true) end
+-- 一律走 callMethod，避免 :Method 的 self 差异
+callMethod(sliderFov, "Set", 90)
+callMethod(sliderSmooth, "Set", 35)
+callMethod(bindToggle, "Set", Enum.KeyCode.RightShift)
+callMethod(dropMode, "Set", "头部")
+callMethod(toggleEsp and toggleEsp.Frame, "Set", true)
 
 print(("[demo] 完成：%d 个 Tab，窗口标题 Light Script · Demo"):format(5))

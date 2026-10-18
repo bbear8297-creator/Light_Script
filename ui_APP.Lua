@@ -132,6 +132,85 @@ function Library:Call(inst, name, ...)
     return fn(...)
 end
 
+-- ═══════════════════════════════════════════════════════════
+-- 元素代理（Instance 无法承载 obj:Method）
+--
+--   实测（Delta / Luau）：
+--     label["SetText"]         → function      -- __index 能查到
+--     label.SetText(label,"x") → ok            -- dot 调用可以
+--     label:SetText("x")       → "not a valid member"  -- 挂掉
+--
+--   因为 obj:Method(x) 编译成 GETMETHOD，绕过 metatable 的 __index。
+--   所以带方法的元素必须返回一个 table 代理：table 的 : 调用走 __index，
+--   属性和实例方法（Destroy / IsA / Parent …）全部转发给真 Instance。
+-- ═══════════════════════════════════════════════════════════
+
+-- 让方法同时吃 obj:Method(x) 和 obj.Method(x)
+local function toleranceWrap(fn)
+    return function(a, b, c)
+        if type(a) == "table" and rawget(a, "__inst") ~= nil then
+            return fn(b, c)
+        end
+        return fn(a, b)
+    end
+end
+
+local ProxyMT = {
+    __index = function(self, key)
+        local methods = rawget(self, "__methods")
+        if methods then
+            local fn = methods[key]
+            if fn ~= nil then return fn end
+        end
+        -- 属性路由：如 label.Text 指向内部的 TextLabel.Text
+        local props = rawget(self, "__props")
+        if props then
+            local target = props[key]
+            if target then return target[key] end
+        end
+        local inst = rawget(self, "__inst")
+        local v = inst[key]
+        if type(v) == "function" then
+            -- 实例方法（Destroy / IsA / FindFirstChild …）绑定到真实例
+            return function(_, ...) return v(inst, ...) end
+        end
+        return v
+    end,
+    __newindex = function(self, key, value)
+        local props = rawget(self, "__props")
+        if props then
+            local target = props[key]
+            if target then target[key] = value; return end
+        end
+        rawget(self, "__inst")[key] = value
+    end,
+    __tostring = function(self)
+        return tostring(rawget(self, "__inst"))
+    end,
+}
+
+-- methods: { Name = function(v) ... end }（不需要写 self）
+-- props:   { Key = 真实控件 } —— 读写代理的 Key 等于读写该控件的同名属性
+local function wrapElement(inst, methods, props)
+    local bound = {}
+    if methods then
+        for name, fn in pairs(methods) do
+            local t = toleranceWrap(fn)
+            bound[name] = t
+            attachMethod(inst, name, fn)   -- dot 调用兜底：inst.Set(inst, v)
+        end
+    end
+    return setmetatable({
+        __inst = inst,
+        __methods = bound,
+        __props = props or {},
+        Frame = inst,
+        Instance = inst,
+    }, ProxyMT)
+end
+
+Library.Wrap = wrapElement
+
 -- 目标 GUI 层
 --   旧逻辑：gethui 不存在 → targetGui = CoreGui，然后只检查了 .Name 能不能读。
 --   Studio / 无 gethui 的执行器里 CoreGui.Name 读得到，但 Parent 赋值会抛
@@ -1156,15 +1235,19 @@ function Library:CreateWindow(options)
             lbl.Parent = frame
             RegisterTheme(function(t) lbl.TextColor3 = t.SubText end)
 
-            -- ★ 附加 setText 方法
-            attachMethod(frame, "SetText", function(newText)
-                if lbl and lbl.Parent then lbl.Text = newText end
-            end)
-            attachMethod(frame, "SetValue", function(newText)
-                if lbl and lbl.Parent then lbl.Text = newText end
-            end)
-
-            return frame
+            -- ★ 返回代理：label:SetText("x") 才走得通
+            return wrapElement(frame, {
+                SetText = function(newText)
+                    if lbl and lbl.Parent then lbl.Text = newText end
+                end,
+                SetValue = function(newText)
+                    if lbl and lbl.Parent then lbl.Text = newText end
+                end,
+                GetText = function()
+                    if lbl and lbl.Parent then return lbl.Text end
+                    return nil
+                end,
+            }, { Text = lbl })
         end
 
         function Elements:CreateSection(title)
@@ -1371,17 +1454,12 @@ function Library:CreateWindow(options)
             end
             track.MouseButton1Click:Connect(fire)
 
-            -- 附加到 Frame 上，两种拿法都能用：obj:Set() / obj.Frame:Set()
-            attachMethod(frame, "Set", function(v) if toggled ~= v then fire() end end)
-            attachMethod(frame, "Get", function() return toggled end)
-            attachMethod(frame, "GetFeatureId", function() return featureId end)
-
-            return {
-                Frame = frame,
+            -- ★ 返回代理：toggle:Set(true) / toggle:Get() / toggle.Frame 都可用
+            return wrapElement(frame, {
                 Set = function(v) if toggled ~= v then fire() end end,
                 Get = function() return toggled end,
                 GetFeatureId = function() return featureId end,
-            }
+            })
         end
 
         function Elements:CreateSlider(text, min, max, default, callback)
@@ -1511,17 +1589,19 @@ function Library:CreateWindow(options)
                     update(input)
                 end
             end))
-            attachMethod(frame, "Set", function(v)
-                v = math.clamp(v, min, max)
-                currentValue = v
-                local sc = (v - min) / span
-                barFill.Size = UDim2.new(sc, 0, 1, 0)
-                knob.Position = UDim2.new(sc, 0, 0.5, 0)
-                valueLbl.Text = tostring(math.floor(v + 0.5))
-                Safe(callback, v)
-            end)
-            attachMethod(frame, "Get", function() return currentValue end)
-            return frame
+            -- ★ 返回代理：slider:Set(v) / slider:Get()
+            return wrapElement(frame, {
+                Set = function(v)
+                    v = math.clamp(v, min, max)
+                    currentValue = v
+                    local sc = (v - min) / span
+                    barFill.Size = UDim2.new(sc, 0, 1, 0)
+                    knob.Position = UDim2.new(sc, 0, 0.5, 0)
+                    valueLbl.Text = tostring(math.floor(v + 0.5))
+                    Safe(callback, v)
+                end,
+                Get = function() return currentValue end,
+            })
         end
 
         function Elements:CreateDropdown(text, options, default, callback)
@@ -1670,20 +1750,22 @@ function Library:CreateWindow(options)
                 currentDropdown.conn = conn
             end)
 
-            attachMethod(frame, "Set", function(v)
-                for _, o in ipairs(options) do
-                    if o == v then
-                        selected = o
-                        dropBtn.Text = o
-                        Safe(callback, o)
-                        return true
+            -- ★ 返回代理
+            return wrapElement(frame, {
+                Set = function(v)
+                    for _, o in ipairs(options) do
+                        if o == v then
+                            selected = o
+                            dropBtn.Text = o
+                            Safe(callback, o)
+                            return true
+                        end
                     end
-                end
-                return false
-            end)
-            attachMethod(frame, "Get", function() return selected end)
-            attachMethod(frame, "GetOptions", function() return options end)
-            return frame
+                    return false
+                end,
+                Get = function() return selected end,
+                GetOptions = function() return options end,
+            })
         end
 
         function Elements:CreateTextbox(text, placeholder, default, callback)
@@ -1824,8 +1906,8 @@ function Library:CreateWindow(options)
                 barFill.BackgroundColor3 = t.Accent
             end)
 
-            return {
-                Frame = frame,
+            -- ★ 返回代理：bar:Set(0.5) / bar:Get()
+            return wrapElement(frame, {
                 Set = function(v)
                     v = math.clamp(v, 0, 1)
                     currentProgress = v
@@ -1835,7 +1917,7 @@ function Library:CreateWindow(options)
                     pct.Text = math.floor(v * 100) .. "%"
                 end,
                 Get = function() return currentProgress end,
-            }
+            })
         end
 
         function Elements:CreateInfoPanel(info)
@@ -1922,18 +2004,18 @@ function Library:CreateWindow(options)
                 if s then s.Color = t.Accent end
             end)
 
-            -- ★ 关键修复：用 attachMethod（rawset）附加方法
-            attachMethod(panel, "SetServerInfo", function(text)
-                if sL and sL.Parent then sL.Text = tostring(text) end
-            end)
-            attachMethod(panel, "SetExecutorInfo", function(text)
-                if eL and eL.Parent then eL.Text = tostring(text) end
-            end)
-            attachMethod(panel, "SetPlayerName", function(text)
-                if nL and nL.Parent then nL.Text = tostring(text) end
-            end)
-
-            return panel
+            -- ★ 返回代理
+            return wrapElement(panel, {
+                SetServerInfo = function(text)
+                    if sL and sL.Parent then sL.Text = tostring(text) end
+                end,
+                SetExecutorInfo = function(text)
+                    if eL and eL.Parent then eL.Text = tostring(text) end
+                end,
+                SetPlayerName = function(text)
+                    if nL and nL.Parent then nL.Text = tostring(text) end
+                end,
+            })
         end
 
         function Elements:CreateImage(imageId, sizeX, sizeY)
@@ -2252,7 +2334,16 @@ function Library:CreateWindow(options)
             end)
 
             track({ Disconnect = function() closePopup() end, Connected = true })
-            return frame
+            -- ★ 返回代理
+            return wrapElement(frame, {
+                Set = function(c)
+                    if typeof(c) ~= "Color3" then return end
+                    currentColor = c
+                    prev.BackgroundColor3 = c
+                    Safe(callback, c)
+                end,
+                Get = function() return currentColor end,
+            })
         end
 
         function Elements:CreateKeybind(text, defaultKey, callback)
@@ -2324,9 +2415,11 @@ function Library:CreateWindow(options)
 
             bindBtn.MouseButton1Click:Connect(startListening)
             bindKey(currentKey)
-            attachMethod(frame, "Set", function(key) if key then bindKey(key) end end)
-            attachMethod(frame, "Get", function() return currentKey end)
-            return frame
+            -- ★ 返回代理
+            return wrapElement(frame, {
+                Set = function(key) if key then bindKey(key) end end,
+                Get = function() return currentKey end,
+            })
         end
 
         function Elements:CreateParagraph(text, lines)
