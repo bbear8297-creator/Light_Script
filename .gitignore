@@ -1,0 +1,18 @@
+# 临时 / 系统文件
+Thumbs.db
+desktop.ini
+.DS_Store
+
+# 编辑器
+.vscode/
+.idea/
+*.swp
+
+# 本地调试产物
+*.log
+*.tmp
+_dump*.txt
+
+# 设备回传的诊断输出
+ls_*.txt
+*.png
