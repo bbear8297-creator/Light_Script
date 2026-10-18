@@ -409,27 +409,72 @@ local function nearestTarget(radius)
     return best
 end
 
-function Fling(radius, power)
-    local myRoot = Fly:root()
-    local target = nearestTarget(radius)
-    if not myRoot or not target then return 0 end
+-- ══════════════════════════════════════════════════════════
+-- Fling：SkidFling（原作 zqyDSUWX，KILASIK 的 Multi-Fling 用的就是这套）
+--   本质：把自己 CFrame 塞进目标身体里，配上天文级速度/角速度疯狂旋转，
+--         物理求解器会把目标直接弹飞。
+--   三个前置缺一不可：
+--     1) 自己挂 BodyVelocity(0, MaxForce 9e9) → 锁住自己不被弹飞
+--     2) 关掉 Seated 状态
+--     3) FallenPartsDestroyHeight = NaN → 飞出去的部件不会被销毁
+-- ══════════════════════════════════════════════════════════
+function Fling(radius, duration)
+    local char = LP.Character
+    local hum = char and char:FindFirstChildOfClass("Humanoid")
+    local root = char and char:FindFirstChild("HumanoidRootPart")
+    local target = nearestTarget(radius or 30)
+    if not (char and hum and root and target) then return 0 end
+
+    local dur = tonumber(duration) or 2
+    local savedPos = root.CFrame
+    local savedFPDH = workspace.FallenPartsDestroyHeight
+
+    local bv = Instance.new("BodyVelocity")
+    bv.Velocity = Vector3.zero
+    bv.MaxForce = Vector3.new(9e9, 9e9, 9e9)
+    bv.Parent = root
+
+    pcall(function() workspace.FallenPartsDestroyHeight = 0 / 0 end)
+    pcall(function() hum:SetStateEnabled(Enum.HumanoidStateType.Seated, false) end)
 
     task.spawn(function()
-        for i = 1, 10 do
+        local t0 = tick()
+        local angle = 0
+        local flip = 1
+
+        while tick() - t0 < dur do
+            if not root.Parent or not target.Parent then break end
+            angle = angle + 100
+            flip = -flip
+
+            local cf = CFrame.new(target.Position)
+                * CFrame.new(0, flip * 1.5, 0)
+                * CFrame.Angles(math.rad(angle), 0, 0)
+
             pcall(function()
-                myRoot.AssemblyLinearVelocity = Vector3.zero
-                myRoot.CFrame = target.CFrame * CFrame.new(0, 0.5, 0.4)
+                root.CFrame = cf
+                char:SetPrimaryPartCFrame(cf)
+                root.Velocity = Vector3.new(9e7, 9e8, 9e7)
+                root.RotVelocity = Vector3.new(9e8, 9e8, 9e8)
             end)
-            task.wait(0.03)
+            task.wait()
         end
+
+        pcall(function() bv:Destroy() end)
+        pcall(function() hum:SetStateEnabled(Enum.HumanoidStateType.Seated, true) end)
+        pcall(function() workspace.FallenPartsDestroyHeight = savedFPDH end)
+
+        -- 复位，别把自己丢在地图外面
         pcall(function()
-            myRoot.AssemblyLinearVelocity = Vector3.new(0, power, 0)
+            root.CFrame = savedPos + Vector3.new(0, 3, 0)
+            root.Velocity = Vector3.zero
+            root.RotVelocity = Vector3.zero
+            hum:ChangeState(Enum.HumanoidStateType.GettingUp)
         end)
     end)
+
     return 1
 end
-
--- ══════════════════════════════════════════════════════════
 -- Parts 环绕（所有权劫持版）
 --   原理同 Super Ring Parts：
 --   1) sethiddenproperty(SimulationRadius, inf) 抢到附近部件的物理所有权
@@ -694,32 +739,38 @@ tabTool:CreateDivider()
 tabTool:CreateSection("甩飞附近玩家")
 
 local flingRadius = 25
-local flingPower = 3e4
-local autoFlingConn
-
 tabTool:CreateSlider("作用半径", 5, 100, 25, function(v)
     flingRadius = v
 end)
 
-tabTool:CreateSlider("力度（万）", 1, 100, 3, function(v)
-    flingPower = v * 10000
+tabTool:CreateSlider("甩飞时长（秒）", 1, 6, 2, function(v)
+    flingDuration = v
 end)
 
 tabTool:CreateButton("立即甩飞", function()
-    local n = Fling(flingRadius, flingPower)
-    win:Notify("甩飞", ("范围内命中 %d 人"):format(n), 2, { Type = n > 0 and "success" or "warning" })
+    local n = Fling(flingRadius, flingDuration)
+    win:Notify("甩飞", n > 0 and "已开始甩飞" or "范围内没人", 2,
+        { Type = n > 0 and "success" or "warning" })
 end)
 
 tabTool:CreateToggle("自动甩飞", false, function(on)
-    if autoFlingConn then autoFlingConn:Disconnect(); autoFlingConn = nil end
+    if autoFlingConn then
+        pcall(function() autoFlingConn:Disconnect() end)
+        pcall(function() task.cancel(autoFlingConn) end)
+        autoFlingConn = nil
+    end
     if on then
-        autoFlingConn = RunService.Heartbeat:Connect(function()
-            Fling(flingRadius, flingPower)
+        autoFlingConn = task.spawn(function()
+            while autoFlingConn do
+                Fling(flingRadius, flingDuration)
+                task.wait(flingDuration + 0.6)
+            end
         end)
         win:SetIslandStatus("自动甩飞中")
     else
         win:SetIslandStatus("待机")
     end
+end)
 end)
 
 tabTool:CreateDivider()
