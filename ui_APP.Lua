@@ -97,10 +97,17 @@ end
 local function attachMethod(inst, name, fn)
     if not inst or not name or type(fn) ~= "function" then return false end
 
+    -- ★ obj:Method(x) 会把 obj 当第一个参数传进来。
+    --   统一包一层，让 obj:Method(x) 和 obj.Method(x) 两种写法都成立。
+    local function wrapped(a, b, c)
+        if a == inst then return fn(b, c) end
+        return fn(a, b)
+    end
+
     -- 1) 部分执行器的 rawset 支持 Instance
-    if pcall(rawset, inst, name, fn) then
+    if pcall(rawset, inst, name, wrapped) then
         local ok, got = pcall(function() return inst[name] end)
-        if ok and got == fn then return true end
+        if ok and got == wrapped then return true end
     end
 
     -- 2) 共享 metatable 注入（主路径）
@@ -109,7 +116,7 @@ local function attachMethod(inst, name, fn)
         store = {}
         MethodRegistry[inst] = store
     end
-    store[name] = fn
+    store[name] = wrapped
 
     if hookInstanceIndex() then return true end
 
@@ -117,6 +124,7 @@ local function attachMethod(inst, name, fn)
     return false
 end
 
+-- Library:Call(inst, "SetText", "x")  →  不需要传 self
 function Library:Call(inst, name, ...)
     local store = MethodRegistry[inst]
     local fn = store and store[name]
