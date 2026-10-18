@@ -438,8 +438,10 @@ end
 --   → 因为是服务器已知的部件，其他人也能看见
 -- ══════════════════════════════════════════════════════════
 local Ring = {
-    on = false, count = 12, radius = 6, spin = 2, scanRadius = 120,
-    conn = nil, t = 0, items = {},
+    on = false, count = 12, radius = 6, spin = 2,
+    scanRadius = 400,          -- 扫描半径：地图散件常常堆在远处，必须放宽
+    allowLocal = false,        -- 找不到散件时是否用本地方块兜底（默认关闭）
+    conn = nil, t = 0, items = {}, hijacked = 0,
 }
 
 function Ring:claimOwnership()
@@ -447,20 +449,31 @@ function Ring:claimOwnership()
     pcall(function() LP.ReplicationFocus = workspace end)
 end
 
+-- 按距离由近到远挑最近的 count 个未锚定、非角色部件
 function Ring:collect()
     local myRoot = Fly:root()
     if not myRoot then return {} end
-    local out = {}
+    local myPos = myRoot.Position
+
+    local cands = {}
     for _, d in ipairs(workspace:GetDescendants()) do
-        if #out >= self.count then break end
         if d:IsA("BasePart") and not d.Anchored and d ~= myRoot then
             local model = d:FindFirstAncestorOfClass("Model")
             local isCharacter = model and model:FindFirstChildOfClass("Humanoid") ~= nil
-            if not isCharacter
-                and (d.Position - myRoot.Position).Magnitude <= self.scanRadius then
-                out[#out + 1] = d
+            if not isCharacter then
+                local dist = (d.Position - myPos).Magnitude
+                if dist <= self.scanRadius then
+                    cands[#cands + 1] = { part = d, dist = dist }
+                end
             end
         end
+    end
+
+    table.sort(cands, function(a, b) return a.dist < b.dist end)
+
+    local out = {}
+    for i = 1, math.min(self.count, #cands) do
+        out[i] = cands[i].part
     end
     return out
 end
@@ -500,32 +513,88 @@ function Ring:build()
     self:clear()
     self:claimOwnership()
 
-    for _, p in ipairs(self:collect()) do
+    local found = self:collect()
+    self.hijacked = 0
+
+    for _, p in ipairs(found) do
         local item = self:attach(p)
-        if item then self.items[#self.items + 1] = item end
-    end
-
-    -- 地图上没东西可吸时，退化成自己的方块（只有自己能看见）
-    if #self.items == 0 then
-        local myRoot = Fly:root()
-        local folder = Instance.new("Folder")
-        folder.Name = "LS_Ring"
-        folder.Parent = workspace
-        self.localFolder = folder
-
-        for i = 1, self.count do
-            local p = Instance.new("Part")
-            p.Size = Vector3.new(0.9, 0.9, 0.9)
-            p.Material = Enum.Material.Neon
-            p.Color = Color3.fromHSV((i - 1) / self.count, 0.65, 1)
-            p.Anchored = true
-            p.CanCollide = false
-            p.CanQuery = false
-            p.CanTouch = false
-            p.Parent = folder
-            self.items[#self.items + 1] = { part = p, localPart = true }
+        if item then
+            self.items[#self.items + 1] = item
+            self.hijacked = self.hijacked + 1
         end
     end
+
+    -- 只有显式允许时才用本地方块兜底，否则宁可不显示
+    if #self.items == 0 then
+        if self.allowLocal then
+            local folder = Instance.new("Folder")
+            folder.Name = "LS_Ring"
+            folder.Parent = workspace
+            self.localFolder = folder
+
+            for i = 1, self.count do
+                local p = Instance.new("Part")
+                p.Size = Vector3.new(0.9, 0.9, 0.9)
+                p.Material = Enum.Material.Neon
+                p.Color = Color3.fromHSV((i - 1) / self.count, 0.65, 1)
+                p.Anchored = true
+                p.CanCollide = false
+                p.CanQuery = false
+                p.CanTouch = false
+                p.Parent = folder
+                self.items[#self.items + 1] = { part = p, localPart = true }
+            end
+        else
+            -- 静默：由心跳的 refresh 反复尝试，不在这里刷屏
+        end
+    end
+    return self.hijacked
+end
+
+-- 剔掉已销毁/被移出场景的部件
+function Ring:prune()
+    local removed = false
+    for i = #self.items, 1, -1 do
+        local it = self.items[i]
+        local p = it.part
+        if not p or not p.Parent then
+            pcall(function()
+                if it.ap then it.ap:Destroy() end
+                if it.ao then it.ao:Destroy() end
+                if it.att then it.att:Destroy() end
+            end)
+            table.remove(self.items, i)
+            removed = true
+        end
+    end
+    if removed then self.hijacked = #self.items end
+end
+
+-- 自适应补吸：换图 / 部件被销毁后自动补齐到 count 个
+function Ring:refresh()
+    self:prune()
+    local need = self.count - #self.items
+    if need <= 0 then return end
+
+    local myRoot = Fly:root()
+    if not myRoot then return end
+
+    self:claimOwnership()
+
+    local have = {}
+    for _, it in ipairs(self.items) do have[it.part] = true end
+
+    for _, p in ipairs(self:collect()) do
+        if #self.items >= self.count then break end
+        if not have[p] then
+            local item = self:attach(p)
+            if item then
+                self.items[#self.items + 1] = item
+                have[p] = true
+            end
+        end
+    end
+    self.hijacked = #self.items
 end
 
 function Ring:clear()
@@ -549,6 +618,7 @@ function Ring:start()
     self:build()
 
     self.claimTick = 0
+    self.rescanTick = 0
     self.conn = RunService.Heartbeat:Connect(function(dt)
         if not self.on then return end
         local myRoot = Fly:root()
@@ -559,6 +629,13 @@ function Ring:start()
         if self.claimTick > 1 then
             self.claimTick = 0
             self:claimOwnership()
+        end
+
+        -- 换图 / 部件被销毁 → 自动重新吸附
+        self.rescanTick = self.rescanTick + dt
+        if self.rescanTick > 1.2 then
+            self.rescanTick = 0
+            self:refresh()
         end
 
         self.t = self.t + dt * self.spin
@@ -728,7 +805,25 @@ tabTool:CreateDivider()
 tabTool:CreateSection("Parts 环绕")
 
 tabTool:CreateToggle("启用环绕", false, function(on)
-    if on then Ring:start() else Ring:stop() end
+    if on then
+        Ring:start()
+        task.delay(0.4, function()
+            win:Notify("环绕", ("已吸附 %d 个部件"):format(Ring.hijacked), 3,
+                { Type = Ring.hijacked > 0 and "success" or "warning" })
+        end)
+    else
+        Ring:stop()
+    end
+end)
+
+tabTool:CreateToggle("无散件时用本地方块", false, function(on)
+    Ring.allowLocal = on
+    Ring:rebuild()
+end)
+
+tabTool:CreateSlider("扫描半径", 50, 800, 400, function(v)
+    Ring.scanRadius = v
+    Ring:refresh()
 end)
 
 tabTool:CreateSlider("方块数量", 4, 32, 12, function(v)
