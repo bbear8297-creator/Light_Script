@@ -448,21 +448,31 @@ function Fly:setArms(mode)
     if not char then return end
 
     local pose = buildPose()[mode] or buildPose().none
-    for _, name in ipairs({ "Right Shoulder", "Left Shoulder", "RightUpperArm", "LeftUpperArm" }) do
-        local m = char:FindFirstChild(name, true)
-        if m and m:IsA("Motor6D") then
-            if not self.baseC0[m] then self.baseC0[m] = m.C0 end
-            local offset = name:find("Right") and pose.right or pose.left
-            pcall(function()
-                m.C0 = self.baseC0[m] * offset
-            end)
+    for _, d in ipairs(char:GetDescendants()) do
+        local isMotor = d:IsA("Motor6D")
+        local isAnim = d:IsA("AnimationConstraint")      -- 新版骨骼
+        if (isMotor or isAnim) and (d.Name:find("Shoulder") or d.Name:find("UpperArm")) then
+            local offset = d.Name:find("Right") and pose.right or pose.left
+            if isMotor then
+                if not self.baseC0[d] then self.baseC0[d] = d.C0 end
+                pcall(function() d.C0 = self.baseC0[d] * offset end)
+            else
+                if not self.baseC0[d] then self.baseC0[d] = d.Transform end
+                pcall(function() d.Transform = self.baseC0[d] * offset end)
+            end
         end
     end
 end
 
 function Fly:restoreArms()
-    for m, c0 in pairs(self.baseC0) do
-        pcall(function() m.C0 = c0 end)
+    for obj, base in pairs(self.baseC0) do
+        pcall(function()
+            if obj:IsA("Motor6D") then
+                obj.C0 = base
+            else
+                obj.Transform = base
+            end
+        end)
     end
     self.baseC0 = {}
     self.armMode = "none"
@@ -472,7 +482,7 @@ end
 function Fly:freezeAnim(on)
     local char = LP.Character
     if not char then return end
-    local anim = char:FindFirstChildOfClass("Animate")
+    local anim = char:FindFirstChild("Animate")   -- 是 LocalScript，不能按类名找
     if anim then anim.Disabled = on end
 
     local hum = char:FindFirstChildOfClass("Humanoid")
